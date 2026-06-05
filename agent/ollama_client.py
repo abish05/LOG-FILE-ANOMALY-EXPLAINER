@@ -19,8 +19,9 @@ def is_ollama_available() -> bool:
     """
     host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     url = f"{host}/api/tags"
+    headers = {"Bypass-Tunnel-Reminder": "true"}
     try:
-        response = requests.get(url, timeout=5)
+        response = requests.get(url, headers=headers, timeout=5)
         return response.status_code == 200
     except requests.exceptions.RequestException:
         return False
@@ -47,16 +48,17 @@ def call_ollama(prompt: str, model: str = None) -> str:
         "prompt": prompt,
         "stream": False
     }
+    headers = {"Bypass-Tunnel-Reminder": "true"}
 
     max_retries = 3
     for attempt in range(max_retries):
         try:
             logger.info(f"Calling Ollama model {model_name} (Attempt {attempt + 1}/{max_retries})")
-            response = requests.post(url, json=payload, timeout=120)
+            response = requests.post(url, json=payload, headers=headers, timeout=120)
             response.raise_for_status()
             data = response.json()
             return data.get("response", "")
-        except requests.exceptions.RequestException as e:
+        except (requests.exceptions.RequestException, ValueError) as e:
             logger.debug(f"Ollama request failed on attempt {attempt + 1}: {e}")
             if attempt < max_retries - 1:
                 time.sleep(2)

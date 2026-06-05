@@ -9,7 +9,7 @@ from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
-ERROR_KEYWORDS = ["ERROR", "EXCEPTION", "FAILED", "TIMEOUT", "CRITICAL", "FATAL"]
+ERROR_KEYWORDS = ["ERROR", "EXCEPTION", "FAILED", "TIMEOUT", "CRITICAL", "FATAL", "WARN", "WARNING", "ERR"]
 
 def classify_error(line_text: str, context: List[str]) -> str:
     """
