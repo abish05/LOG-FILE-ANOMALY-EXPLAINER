@@ -1,0 +1,49 @@
+2024-05-10T11:00:01Z [INFO] Microservice payment-gateway starting...
+2024-05-10T11:00:02Z [INFO] Loading configuration from Consul
+2024-05-10T11:00:03Z [INFO] Connected to Redis cache
+2024-05-10T11:00:04Z [INFO] Initializing HTTP client with timeout 5000ms
+2024-05-10T11:00:05Z [INFO] Starting API on port 8081
+2024-05-10T11:01:10Z [INFO] Request received: POST /api/payments
+2024-05-10T11:01:12Z [INFO] Calling downstream service: auth-service
+2024-05-10T11:01:13Z [INFO] Auth successful
+2024-05-10T11:02:00Z [INFO] Request received: POST /api/payments
+2024-05-10T11:02:05Z [INFO] Payment processed successfully
+2024-05-10T11:03:00Z [INFO] Request received: GET /api/status
+2024-05-10T11:04:10Z [INFO] Request received: POST /api/payments
+2024-05-10T11:05:00Z [INFO] Payment processed successfully
+2024-05-10T11:06:00Z [INFO] Request received: POST /api/payments
+2024-05-10T11:07:00Z [INFO] Request received: POST /api/payments
+2024-05-10T11:08:00Z [INFO] Request received: POST /api/payments
+2024-05-10T11:09:00Z [INFO] Request received: POST /api/payments
+2024-05-10T11:10:00Z [INFO] Request received: POST /api/payments
+2024-05-10T11:11:00Z [INFO] Request received: POST /api/payments
+2024-05-10T11:12:00Z [INFO] Request received: POST /api/payments
+2024-05-10T11:13:00Z [INFO] Request received: POST /api/payments
+2024-05-10T11:14:00Z [INFO] Request received: POST /api/payments
+2024-05-10T11:15:00Z [INFO] Request received: POST /api/payments
+2024-05-10T11:16:00Z [INFO] Request received: POST /api/payments
+2024-05-10T11:17:00Z [INFO] Request received: POST /api/payments
+2024-05-10T11:18:00Z [INFO] Calling downstream service: fraud-detection
+2024-05-10T11:18:05Z [ERROR] Request TIMEOUT calling fraud-detection after 5000ms
+2024-05-10T11:18:05Z [INFO] Retrying fraud-detection...
+2024-05-10T11:18:10Z [ERROR] Request TIMEOUT calling fraud-detection after 5000ms
+2024-05-10T11:18:10Z [INFO] Retrying fraud-detection...
+2024-05-10T11:18:15Z [ERROR] Request TIMEOUT calling fraud-detection after 5000ms
+2024-05-10T11:18:15Z [ERROR] FAILED to reach payment-service after 3 retries
+2024-05-10T11:18:16Z [CRITICAL] Circuit breaker OPEN for downstream service
+2024-05-10T11:18:20Z [INFO] Rejecting incoming payment requests with 503
+2024-05-10T11:18:30Z [INFO] Rejecting incoming payment requests with 503
+2024-05-10T11:18:40Z [INFO] Circuit breaker half-open, probing downstream...
+2024-05-10T11:18:45Z [ERROR] Probe TIMEOUT
+2024-05-10T11:18:46Z [INFO] Circuit breaker remains OPEN
+2024-05-10T11:19:00Z [WARN] Resolving DNS for external payment provider api.stripe.com
+2024-05-10T11:19:02Z [ERROR] DNS resolution failures: No such host api.stripe.com
+2024-05-10T11:19:10Z [ERROR] Network unreachable: ENETUNREACH
+2024-05-10T11:19:15Z [ERROR] Network unreachable: ENETUNREACH
+2024-05-10T11:19:20Z [ERROR] Network unreachable: ENETUNREACH
+2024-05-10T11:19:25Z [ERROR] Network unreachable: ENETUNREACH
+2024-05-10T11:19:30Z [ERROR] Network unreachable: ENETUNREACH
+2024-05-10T11:19:35Z [ERROR] Network unreachable: ENETUNREACH
+2024-05-10T11:19:40Z [ERROR] Network unreachable: ENETUNREACH
+2024-05-10T11:19:45Z [ERROR] Network unreachable: ENETUNREACH
+2024-05-10T11:19:50Z [FATAL] Critical network failure, isolating node

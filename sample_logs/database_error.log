@@ -1,0 +1,67 @@
+2024-05-10T10:00:01Z [INFO] Application starting...
+2024-05-10T10:00:02Z [INFO] Loading configuration from /etc/config.yaml
+2024-05-10T10:00:03Z [INFO] Initializing connection pool, max_connections=50
+2024-05-10T10:00:04Z [INFO] Connected to PostgreSQL at 10.0.1.5:5432
+2024-05-10T10:00:05Z [INFO] Starting web server on port 8080
+2024-05-10T10:01:10Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:01:12Z [INFO] User data retrieved successfully
+2024-05-10T10:02:00Z [INFO] Request received: POST /api/v1/orders
+2024-05-10T10:02:05Z [INFO] Order processed successfully
+2024-05-10T10:03:00Z [INFO] Running scheduled background jobs
+2024-05-10T10:04:10Z [INFO] Cache synchronized
+2024-05-10T10:05:00Z [INFO] Request received: GET /api/v1/products
+2024-05-10T10:06:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:07:00Z [INFO] Request received: GET /api/v1/orders
+2024-05-10T10:08:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:09:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:10:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:11:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:12:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:13:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:14:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:15:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:16:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:17:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:18:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:19:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:20:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:21:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:22:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:23:00Z [INFO] Request received: GET /api/v1/users
+2024-05-10T10:24:00Z [WARN] High traffic detected, queueing requests
+2024-05-10T10:25:00Z [INFO] Attempting to acquire db connection
+2024-05-10T10:25:01Z [INFO] Attempting to acquire db connection
+2024-05-10T10:25:02Z [WARN] Connection pool utilization at 95%
+2024-05-10T10:26:00Z [WARN] Connection pool exhausted. Waiting for available connections...
+2024-05-10T10:26:05Z [ERROR] failed to acquire connection: connection refused to postgres:5432
+2024-05-10T10:26:10Z [ERROR] failed to acquire connection: connection refused to postgres:5432
+2024-05-10T10:26:15Z [ERROR] failed to acquire connection: connection refused to postgres:5432
+2024-05-10T10:26:20Z [ERROR] failed to acquire connection: connection refused to postgres:5432
+2024-05-10T10:26:25Z [ERROR] failed to acquire connection: connection refused to postgres:5432
+2024-05-10T10:26:30Z [ERROR] failed to acquire connection: connection refused to postgres:5432
+2024-05-10T10:26:35Z [ERROR] failed to acquire connection: connection refused to postgres:5432
+2024-05-10T10:26:40Z [ERROR] failed to acquire connection: connection refused to postgres:5432
+2024-05-10T10:26:45Z [ERROR] failed to acquire connection: connection refused to postgres:5432
+2024-05-10T10:26:50Z [ERROR] failed to acquire connection: connection refused to postgres:5432
+2024-05-10T10:26:55Z [ERROR] failed to acquire connection: connection refused to postgres:5432
+2024-05-10T10:27:00Z [ERROR] failed to acquire connection: connection refused to postgres:5432
+2024-05-10T10:27:05Z [ERROR] failed to acquire connection: connection refused to postgres:5432
+2024-05-10T10:27:10Z [CRITICAL] Database unavailable, rolling back transaction
+2024-05-10T10:27:11Z [INFO] Initiating reconnect with exponential backoff (2s)
+2024-05-10T10:27:13Z [ERROR] Reconnect failed: connection refused to postgres:5432
+2024-05-10T10:27:13Z [INFO] Initiating reconnect with exponential backoff (4s)
+2024-05-10T10:27:17Z [ERROR] Reconnect failed: connection refused to postgres:5432
+2024-05-10T10:27:17Z [INFO] Initiating reconnect with exponential backoff (8s)
+2024-05-10T10:27:25Z [ERROR] Reconnect failed: connection refused to postgres:5432
+2024-05-10T10:27:25Z [INFO] Initiating reconnect with exponential backoff (16s)
+2024-05-10T10:27:41Z [ERROR] Reconnect failed: connection refused to postgres:5432
+2024-05-10T10:27:41Z [INFO] Initiating reconnect with exponential backoff (32s)
+2024-05-10T10:28:13Z [ERROR] Reconnect failed: connection refused to postgres:5432
+2024-05-10T10:28:13Z [INFO] Initiating reconnect with exponential backoff (64s)
+2024-05-10T10:29:17Z [ERROR] Reconnect failed: connection refused to postgres:5432
+2024-05-10T10:29:17Z [INFO] Maximum backoff reached.
+2024-05-10T10:29:20Z [INFO] Cleaning up resources before shutdown
+2024-05-10T10:29:21Z [INFO] Closing remaining healthy connections
+2024-05-10T10:29:22Z [INFO] Stopping web server
+2024-05-10T10:29:23Z [INFO] Flushing logs
+2024-05-10T10:29:24Z [FATAL] Service shutting down due to unrecoverable database connectivity failure

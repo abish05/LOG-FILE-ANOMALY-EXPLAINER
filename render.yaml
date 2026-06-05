@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: logsage-ai
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    envVars:
+      - key: OLLAMA_HOST
+        value: https://your-ollama-instance.com  # Replace with actual URL
+      - key: MODEL_NAME
+        value: llama3
+      - key: DB_PATH
+        value: /tmp/logsage.db
+      - key: PYTHON_VERSION
+        value: 3.10.12

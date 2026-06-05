@@ -1,0 +1,48 @@
+2024-05-10T12:00:01Z [INFO] AuthService starting up...
+2024-05-10T12:00:02Z [INFO] Loading RSA keys for JWT signing
+2024-05-10T12:00:03Z [INFO] Connected to user database
+2024-05-10T12:00:05Z [INFO] Service ready on port 4000
+2024-05-10T12:01:10Z [INFO] POST /login user=jdoe@company.com
+2024-05-10T12:01:12Z [INFO] Login successful, issuing token
+2024-05-10T12:02:00Z [INFO] POST /login user=msmith@company.com
+2024-05-10T12:02:05Z [INFO] Login successful, issuing token
+2024-05-10T12:03:00Z [INFO] GET /profile validate JWT token
+2024-05-10T12:04:10Z [INFO] Token validated
+2024-05-10T12:05:00Z [INFO] POST /login user=admin@company.com
+2024-05-10T12:05:01Z [WARN] Invalid password for admin@company.com
+2024-05-10T12:05:01Z [ERROR] FAILED login attempt: admin@company.com from 192.168.1.45
+2024-05-10T12:05:02Z [INFO] POST /login user=admin@company.com
+2024-05-10T12:05:02Z [WARN] Invalid password for admin@company.com
+2024-05-10T12:05:02Z [ERROR] FAILED login attempt: admin@company.com from 192.168.1.45
+2024-05-10T12:05:03Z [INFO] POST /login user=admin@company.com
+2024-05-10T12:05:03Z [WARN] Invalid password for admin@company.com
+2024-05-10T12:05:03Z [ERROR] FAILED login attempt: admin@company.com from 192.168.1.45
+2024-05-10T12:05:04Z [INFO] POST /login user=admin@company.com
+2024-05-10T12:05:04Z [WARN] Invalid password for admin@company.com
+2024-05-10T12:05:04Z [ERROR] FAILED login attempt: admin@company.com from 192.168.1.45
+2024-05-10T12:05:05Z [INFO] POST /login user=admin@company.com
+2024-05-10T12:05:05Z [WARN] Invalid password for admin@company.com
+2024-05-10T12:05:05Z [ERROR] FAILED login attempt: admin@company.com from 192.168.1.45
+2024-05-10T12:05:06Z [INFO] POST /login user=admin@company.com
+2024-05-10T12:05:06Z [WARN] Invalid password for admin@company.com
+2024-05-10T12:05:06Z [ERROR] FAILED login attempt: admin@company.com from 192.168.1.45
+2024-05-10T12:05:07Z [INFO] POST /login user=admin@company.com
+2024-05-10T12:05:07Z [WARN] Invalid password for admin@company.com
+2024-05-10T12:05:07Z [ERROR] FAILED login attempt: admin@company.com from 192.168.1.45
+2024-05-10T12:05:08Z [INFO] POST /login user=admin@company.com
+2024-05-10T12:05:08Z [WARN] Invalid password for admin@company.com
+2024-05-10T12:05:08Z [ERROR] FAILED login attempt: admin@company.com from 192.168.1.45
+2024-05-10T12:05:09Z [CRITICAL] Brute force detected, IP 192.168.1.45 blocked for 1 hour
+2024-05-10T12:05:10Z [INFO] Adding IP to firewall blocklist
+2024-05-10T12:06:00Z [INFO] POST /refresh-token
+2024-05-10T12:06:02Z [ERROR] JWT token validation failed — signature mismatch
+2024-05-10T12:06:03Z [EXCEPTION] jwt.exceptions.InvalidSignatureError: Signature verification failed
+  File "/usr/local/lib/python3.10/site-packages/jwt/api_jwt.py", line 123, in decode
+    self._verify_signature(payload, msg, key, algorithms, options)
+  File "/usr/local/lib/python3.10/site-packages/jwt/api_jws.py", line 265, in _verify_signature
+    raise InvalidSignatureError("Signature verification failed")
+2024-05-10T12:06:05Z [INFO] Returned 401 Unauthorized to client
+2024-05-10T12:07:00Z [INFO] POST /refresh-token
+2024-05-10T12:07:01Z [ERROR] JWT token validation failed — signature mismatch
+2024-05-10T12:07:02Z [EXCEPTION] jwt.exceptions.InvalidSignatureError: Signature verification failed
+2024-05-10T12:08:00Z [INFO] Audit logger: Suspicious token refresh activity detected
