@@ -14,13 +14,15 @@ from .prompt_templates import build_analysis_prompt, build_incident_summary_prom
 
 logger = logging.getLogger(__name__)
 
-def run_agent_loop(parsed_data: Dict[str, Any], log_filename: str) -> Dict[str, Any]:
+def run_agent_loop(parsed_data: Dict[str, Any], log_filename: str, progress_callback=None, status_callback=None) -> Dict[str, Any]:
     """
     Executes the 7-step agent loop to process parsed log data into a final report.
 
     Args:
         parsed_data (dict): The output from parse_log_file.
         log_filename (str): The name of the analyzed log file.
+        progress_callback (callable, optional): Callback to update progress bar.
+        status_callback (callable, optional): Callback to update status text.
 
     Returns:
         dict: The complete incident report.
@@ -35,9 +37,15 @@ def run_agent_loop(parsed_data: Dict[str, Any], log_filename: str) -> Dict[str, 
         
     # Step 2 - Detect
     logger.info("Step 2: Detect anomalies")
-    anomalies = parsed_data["anomalies"]
+    
+    # Cap to top 5 anomalies to prevent massive wait times and timeout freezes
+    all_anomalies = parsed_data["anomalies"]
+    anomalies = all_anomalies[:5] 
+    
     if not anomalies:
         logger.info("No anomalies detected.")
+    elif len(all_anomalies) > 5:
+        logger.info(f"Capped analysis to first 5 anomalies out of {len(all_anomalies)}")
     
     anomaly_analyses = []
     
@@ -45,8 +53,12 @@ def run_agent_loop(parsed_data: Dict[str, Any], log_filename: str) -> Dict[str, 
     logger.info(f"Step 3 & 4: Extract context and analyze {len(anomalies)} anomalies")
     for idx, anomaly in enumerate(anomalies):
         logger.info(f"Analyzing anomaly {idx + 1}/{len(anomalies)}")
+        if status_callback:
+            status_callback(f"Analyzing anomaly {idx + 1}/{len(anomalies)}: {anomaly.get('category', 'Unknown')}")
+        if progress_callback:
+            progress_callback(20 + int((idx / max(len(anomalies), 1)) * 60))
+            
         prompt = build_analysis_prompt(anomaly, log_filename)
-        
         raw_response = call_ollama(prompt, model=model_name)
         
         # Safely parse JSON

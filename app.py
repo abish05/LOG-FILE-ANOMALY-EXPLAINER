@@ -185,7 +185,12 @@ if nav_selection == "🏠 Analyze Logs":
                     
                     # Agent Steps 3-7
                     status_text.text("Running Agent Loop for AI Analysis...")
-                    report = run_agent_loop(parsed_data, filename)
+                    report = run_agent_loop(
+                        parsed_data, 
+                        filename,
+                        progress_callback=progress_bar.progress,
+                        status_callback=status_text.text
+                    )
                     progress_bar.progress(80)
                     
                     status_text.text("Saving incident to database...")
