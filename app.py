@@ -54,14 +54,18 @@ with st.sidebar:
         st.session_state["ollama_host"] = new_host
         st.session_state["ollama_online"] = is_ollama_available()
     
-    # Check Ollama status
+    # Check Ollama / Cloud status
+    has_hf_token = bool(os.getenv("HF_API_TOKEN"))
+    
     if "ollama_online" not in st.session_state:
         st.session_state["ollama_online"] = is_ollama_available()
         
     if st.session_state["ollama_online"]:
-        st.success("🟢 Ollama Online")
+        st.success("🟢 Local AI Online")
+    elif has_hf_token:
+        st.success("🟢 Cloud AI Online")
     else:
-        st.error("🔴 Ollama Offline")
+        st.error("🔴 AI Offline")
         if st.button("Check Again"):
             st.session_state["ollama_online"] = is_ollama_available()
             st.rerun()
@@ -168,8 +172,8 @@ if nav_selection == "🏠 Analyze Logs":
     
     if uploaded_file is not None:
         if st.button("🚀 Run Analysis"):
-            if not st.session_state["ollama_online"]:
-                st.error("Cannot run analysis while Ollama is offline. Please start it and check again.")
+            if not st.session_state["ollama_online"] and not os.getenv("HF_API_TOKEN"):
+                st.error("Cannot run analysis while AI is offline. Please start your local AI or provide a cloud API token.")
             else:
                 try:
                     file_content = uploaded_file.getvalue().decode("utf-8")
