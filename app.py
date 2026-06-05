@@ -36,6 +36,92 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- Premium Custom CSS Injection ---
+st.markdown("""
+<style>
+    /* Import modern font */
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Outfit', sans-serif !important;
+    }
+    
+    /* Main Background & Text */
+    .stApp {
+        background: radial-gradient(circle at top right, #131722, #0d1117);
+        color: #e6edf3;
+    }
+
+    /* Glassmorphism Metrics */
+    div[data-testid="metric-container"] {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        padding: 20px;
+        border-radius: 16px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        transition: transform 0.3s ease, border-color 0.3s ease;
+    }
+    
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-5px);
+        border-color: #00d2ff;
+    }
+
+    /* Primary Button Styling */
+    div.stButton > button:first-child {
+        background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        padding: 10px 24px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(0, 210, 255, 0.3);
+    }
+    
+    div.stButton > button:first-child:hover {
+        transform: translateY(-2px) scale(1.02);
+        box-shadow: 0 6px 20px rgba(0, 210, 255, 0.5);
+    }
+    
+    /* File Uploader styling */
+    section[data-testid="stFileUploadDropzone"] {
+        background: rgba(255, 255, 255, 0.02) !important;
+        border: 2px dashed rgba(255, 255, 255, 0.15) !important;
+        border-radius: 16px !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    section[data-testid="stFileUploadDropzone"]:hover {
+        border-color: #3a7bd5 !important;
+        background: rgba(58, 123, 213, 0.05) !important;
+    }
+    
+    /* Expanders styling */
+    .streamlit-expanderHeader {
+        background-color: rgba(255, 255, 255, 0.05) !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+    }
+    
+    /* Info / Success boxes */
+    div.stAlert {
+        border-radius: 12px;
+        border: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    /* Sidebar styling */
+    section[data-testid="stSidebar"] {
+        background-color: rgba(13, 17, 23, 0.95);
+        border-right: 1px solid rgba(255, 255, 255, 0.05);
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # --- Sidebar ---
 with st.sidebar:
     st.title("🔍 LogSage AI")
@@ -43,36 +129,36 @@ with st.sidebar:
     nav_selection = st.radio("Navigation", ["🏠 Analyze Logs", "📜 Incident History", "ℹ️ About"])
     
     st.markdown("---")
-    st.subheader("Agent Settings")
     
-    # Allow dynamic URL override for cloud deployments
-    current_host = st.session_state.get("ollama_host", os.getenv("OLLAMA_HOST", "http://localhost:11434"))
-    new_host = st.text_input("Ollama URL (e.g., localtunnel)", value=current_host, help="If running on Render, paste your localtunnel URL here.")
-    
-    if new_host != current_host:
-        os.environ["OLLAMA_HOST"] = new_host
-        st.session_state["ollama_host"] = new_host
-        st.session_state["ollama_online"] = is_ollama_available()
-    
-    # Check Ollama / Cloud status
-    has_hf_token = bool(os.getenv("HF_API_TOKEN"))
-    
-    if "ollama_online" not in st.session_state:
-        st.session_state["ollama_online"] = is_ollama_available()
+    with st.expander("⚙️ Advanced Settings"):
+        # Allow dynamic URL override for cloud deployments
+        current_host = st.session_state.get("ollama_host", os.getenv("OLLAMA_HOST", "http://localhost:11434"))
+        new_host = st.text_input("Local AI URL", value=current_host, help="If running on Render, paste your localtunnel URL here.")
         
-    if st.session_state["ollama_online"]:
-        st.success("🟢 Local AI Online")
-    elif has_hf_token:
-        st.success("🟢 Cloud AI Online")
-    else:
-        st.error("🔴 AI Offline")
-        if st.button("Check Again"):
+        if new_host != current_host:
+            os.environ["OLLAMA_HOST"] = new_host
+            st.session_state["ollama_host"] = new_host
             st.session_state["ollama_online"] = is_ollama_available()
-            st.rerun()
+        
+        # Check Ollama / Cloud status
+        has_hf_token = bool(os.getenv("HF_API_TOKEN"))
+        
+        if "ollama_online" not in st.session_state:
+            st.session_state["ollama_online"] = is_ollama_available()
             
-    model_name = st.selectbox("Model", ["llama3", "llama2", "mistral"], index=0)
-    # Update env var to affect analyzer
-    os.environ["MODEL_NAME"] = model_name
+        if st.session_state["ollama_online"]:
+            st.success("🟢 Local AI Online")
+        elif has_hf_token:
+            st.success("🟢 Cloud AI Online")
+        else:
+            st.error("🔴 AI Offline")
+            if st.button("Check Again"):
+                st.session_state["ollama_online"] = is_ollama_available()
+                st.rerun()
+                
+        model_name = st.selectbox("Model", ["llama3", "llama2", "mistral"], index=0)
+        # Update env var to affect analyzer
+        os.environ["MODEL_NAME"] = model_name
 
 # --- Helper Functions ---
 def render_dashboard(report):
