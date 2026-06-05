@@ -45,6 +45,15 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("Agent Settings")
     
+    # Allow dynamic URL override for cloud deployments
+    current_host = st.session_state.get("ollama_host", os.getenv("OLLAMA_HOST", "http://localhost:11434"))
+    new_host = st.text_input("Ollama URL (e.g., localtunnel)", value=current_host, help="If running on Render, paste your localtunnel URL here.")
+    
+    if new_host != current_host:
+        os.environ["OLLAMA_HOST"] = new_host
+        st.session_state["ollama_host"] = new_host
+        st.session_state["ollama_online"] = is_ollama_available()
+    
     # Check Ollama status
     if "ollama_online" not in st.session_state:
         st.session_state["ollama_online"] = is_ollama_available()
