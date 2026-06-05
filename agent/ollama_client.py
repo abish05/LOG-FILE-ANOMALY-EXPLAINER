@@ -46,7 +46,10 @@ def call_ollama(prompt: str, model: str = None) -> str:
     payload = {
         "model": model_name,
         "prompt": prompt,
-        "stream": False
+        "stream": False,
+        "options": {
+            "temperature": 0.0
+        }
     }
     headers = {"Bypass-Tunnel-Reminder": "true"}
 
@@ -67,7 +70,16 @@ def call_ollama(prompt: str, model: str = None) -> str:
 
     # Fallback: Hugging Face Inference API (useful for free hosting like Spaces)
     hf_token = os.getenv("HF_API_TOKEN")
-    hf_model = os.getenv("HF_MODEL") or model_name
+    hf_model = os.getenv("HF_MODEL")
+    if not hf_model:
+        # Map common Ollama names to valid HF model repo IDs
+        if "llama3" in model_name.lower():
+            hf_model = "meta-llama/Meta-Llama-3-8B-Instruct"
+        elif "mistral" in model_name.lower():
+            hf_model = "mistralai/Mistral-7B-Instruct-v0.2"
+        else:
+            hf_model = model_name
+            
     if hf_token:
         try:
             return call_huggingface_inference(prompt, hf_model, hf_token)
@@ -90,12 +102,23 @@ def call_huggingface_inference(prompt: str, model: str, token: str) -> str:
     }
     payload = {
         "inputs": prompt,
-        # optional parameters can be added here, e.g. max_new_tokens
+        "parameters": {
+            "temperature": 0.01,
+            "max_new_tokens": 150
+        }
     }
 
-    response = requests.post(api_url, headers=headers, json=payload, timeout=120)
-    response.raise_for_status()
-    data = response.json()
+    # HuggingFace often returns 503 if the model is loading. Retry a few times.
+    for attempt in range(5):
+        response = requests.post(api_url, headers=headers, json=payload, timeout=120)
+        if response.status_code == 503:
+            time.sleep(5)
+            continue
+        response.raise_for_status()
+        data = response.json()
+        break
+    else:
+        raise Exception("HuggingFace API timed out or model failed to load after 5 retries.")
 
     # The HF Inference API may return a list of generations or a dict depending on model.
     if isinstance(data, list) and len(data) > 0:
