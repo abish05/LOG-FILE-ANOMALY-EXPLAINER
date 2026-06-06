@@ -119,38 +119,45 @@ if page == "🏠 Analyze Logs":
 
         if st.button("🚀 Run AI Analysis", type="primary",
                      use_container_width=False):
-            progress = st.progress(0, text="Starting agent loop...")
-            steps = [
-                (14, "Step 1 — Reading log file..."),
-                (28, "Step 2 — Detecting anomalies..."),
-                (42, "Step 3 — Extracting context windows..."),
-                (56, "Step 4 — Analyzing with LLM (may take a moment)..."),
-                (70, "Step 5 — Classifying severity..."),
-                (84, "Step 6 — Generating recommendations..."),
-                (100, "Step 7 — Assembling incident report..."),
-            ]
+            progress = st.progress(0, text="Starting analysis...")
+
+            # Show offline warning before starting
+            ollama_online = st.session_state.get("ollama_status", False)
+            if not ollama_online:
+                st.warning(
+                    "⚡ **Offline mode** — Ollama is not running. "
+                    "Using fast rule-based analysis (no LLM required). "
+                    "Start Ollama locally for full AI-powered explanations."
+                )
+
             try:
-                progress.progress(steps[0][0], text=steps[0][1])
+                progress.progress(10, text="Step 1 — Reading log file...")
                 parsed = parse_log_file(file_content)
 
-                progress.progress(steps[1][0], text=steps[1][1])
+                progress.progress(20, text="Step 2 — Detecting anomalies...")
                 if parsed["errors_found"] == 0:
                     st.info("No anomalies detected in this log file.")
                     progress.empty()
                     st.stop()
 
-                progress.progress(steps[2][0], text=steps[2][1])
-                for i, (pct, msg) in enumerate(steps[3:], 3):
-                    progress.progress(pct, text=msg)
+                def _on_progress(pct: int, msg: str) -> None:
+                    """Callback wired into run_agent_loop for live progress."""
+                    progress.progress(min(pct, 99), text=msg)
 
-                report = run_agent_loop(parsed, uploaded.name)
+                report = run_agent_loop(
+                    parsed, uploaded.name, progress_cb=_on_progress
+                )
                 incident_id = save_incident(report)
                 report["_incident_id"] = incident_id
                 st.session_state["last_report"] = report
+                progress.progress(100, text="Done!")
                 progress.empty()
+
+                mode = report.get("analysis_mode", "llm")
+                mode_label = "rule-based (Ollama offline)" if mode == "rule-based" else "AI (Ollama LLM)"
                 st.success(
-                    f"Analysis complete — {report['errors_found']} anomalies "
-                    f"found. Incident saved (ID: {incident_id})"
+                    f"✅ Analysis complete — **{report['errors_found']} anomalies** found "
+                    f"via {mode_label}. Incident saved (ID: {incident_id})"
                 )
                 st.rerun()
             except Exception as e:
@@ -160,6 +167,13 @@ if page == "🏠 Analyze Logs":
 
     report = st.session_state.get("last_report")
     if report:
+        # Show analysis mode badge
+        mode = report.get("analysis_mode", "llm")
+        if mode == "rule-based":
+            st.info(
+                "⚡ This report was generated using **rule-based analysis** "
+                "(Ollama was offline). Start Ollama and re-run for full AI explanations."
+            )
         tab1, tab2, tab3 = st.tabs(
             ["📊 Dashboard", "🔍 Anomalies", "📄 Report"]
         )

@@ -6,21 +6,33 @@ import requests
 logger = logging.getLogger(__name__)
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-TIMEOUT = 120
+TIMEOUT = 60
 MAX_RETRIES = 3
+
+# Single canonical fallback — valid JSON for _extract_json()
+_FALLBACK_JSON = (
+    '{"root_cause": "Ollama AI offline — rule-based analysis used", '
+    '"category": "Unknown Error", '
+    '"severity_score": 5, '
+    '"severity_label": "Medium", '
+    '"remediation_steps": ['
+    '"Start Ollama locally: ollama serve", '
+    '"Pull the model: ollama pull llama3", '
+    '"Set OLLAMA_HOST env var if running remotely"], '
+    '"summary": "LLM analysis unavailable. '
+    'Rule-based classification was applied automatically."}'
+)
 
 
 def _get_model() -> str:
-    """Read MODEL_NAME fresh from env each call so sidebar selector works."""
+    """Read MODEL_NAME fresh from env each call so the sidebar selector works."""
     return os.getenv("MODEL_NAME", "llama3")
 
 
 def is_ollama_available() -> bool:
-    """Check if Ollama service is reachable."""
+    """Check if Ollama service is reachable (quick 3-second probe)."""
     try:
-        resp = requests.get(
-            f"{OLLAMA_HOST}/api/tags", timeout=5
-        )
+        resp = requests.get(f"{OLLAMA_HOST}/api/tags", timeout=3)
         return resp.status_code == 200
     except Exception:
         return False
@@ -30,29 +42,36 @@ def call_ollama(prompt: str, model: str | None = None) -> str:
     """
     Send prompt to Ollama and return response text.
 
-    - model defaults to MODEL_NAME env var so the sidebar selector is honoured.
-    - Retries up to MAX_RETRIES with exponential back-off.
-    - Never raises — returns a safe fallback JSON string on total failure.
+    - Checks availability first — if offline, returns fallback INSTANTLY
+      (no retry delays) so the UI never freezes.
+    - When online, retries up to MAX_RETRIES with exponential back-off.
+    - Never raises — always returns a parseable string.
     """
     if model is None:
         model = _get_model()
 
+    # ── Fast offline path ──────────────────────────────────────────────────────
+    # Check once upfront. If Ollama isn't reachable, return immediately —
+    # no retries, no sleeping, no 120-second timeouts.
+    if not is_ollama_available():
+        logger.warning("Ollama offline — returning rule-based fallback immediately")
+        return _FALLBACK_JSON
+
+    # ── Online path ────────────────────────────────────────────────────────────
     payload = {
         "model": model,
         "prompt": prompt,
         "stream": False,
         "options": {
-            # Encourage terse, structured responses — faster generation
-            "temperature": 0.2,
-            "num_predict": 512,
+            "temperature": 0.2,     # deterministic → faster
+            "num_predict": 512,     # JSON fits in ~200 tokens → stop early
         },
     }
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             logger.info(
-                f"Ollama request attempt {attempt}/{MAX_RETRIES} "
-                f"(model={model})"
+                f"Ollama request attempt {attempt}/{MAX_RETRIES} (model={model})"
             )
             response = requests.post(
                 f"{OLLAMA_HOST}/api/generate",
@@ -78,16 +97,4 @@ def call_ollama(prompt: str, model: str | None = None) -> str:
             logger.info(f"Retrying in {wait}s...")
             time.sleep(wait)
 
-    # Total failure fallback — valid JSON so the caller can parse it
-    return (
-        '{"root_cause": "AI analysis unavailable", '
-        '"category": "Unknown Error", '
-        '"severity_score": 5, '
-        '"severity_label": "Medium", '
-        '"remediation_steps": ['
-        '"Ensure Ollama is running: ollama serve", '
-        '"Pull the model: ollama pull llama3", '
-        '"Check OLLAMA_HOST env var"], '
-        '"summary": "AI analysis could not be completed. '
-        'Please ensure Ollama is running and llama3 is pulled."}'
-    )
+    return _FALLBACK_JSON
