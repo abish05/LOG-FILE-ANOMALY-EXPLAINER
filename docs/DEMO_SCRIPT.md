@@ -1,3 +1,35 @@
+LogSage AI — 6 Minute Demo Script
+=================================
+
+Minute 1 — Problem statement & architecture overview
+- State the problem: engineers drown in logs; need fast root-cause and remediation guidance.
+- Show architecture slide: Streamlit UI → Parser → Agent (LLM) → DB + Report generator.
+- Mention 7-step agent loop briefly.
+
+Minute 2 — Upload `database_error.log` + watch agent loop
+- Open the app at `http://localhost:8501`.
+- Upload `sample_logs/database_error.log`.
+- Click `Run AI Analysis` and narrate the progress bar and status messages.
+
+Minute 3 — Dashboard walkthrough
+- Show metric cards: total lines, errors found, max & avg severity.
+- Open category pie and severity bar charts.
+- Read the executive summary aloud.
+
+Minute 4 — Anomaly deep-dive
+- Open an anomaly expander: show severity, root cause, remediation steps.
+- Expand full ±20 line context.
+- Explain how the LLM used surrounding context to form the diagnosis.
+
+Minute 5 — Download reports
+- Generate PDF and CSV from Report tab; show file contents briefly.
+- Explain where report files are written (`REPORT_OUTPUT_DIR`).
+
+Minute 6 — Incident history + Q&A
+- Show the Incident History tab, load a past incident back into the dashboard.
+- Outline common Q&A talking points: privacy, on-prem model support, JSON output guarantees, and fallback to Hugging Face.
+
+End of demo.
 # LogSage AI Demo Script
 
 ## Preparation

@@ -88,6 +88,44 @@ def call_ollama(prompt: str, model: str = None) -> str:
 
     return "AI analysis unavailable. Please ensure Ollama is running locally or set `HF_API_TOKEN` for hosted inference."
 
+def call_ollama_stream(prompt: str,
+                       model: str = MODEL_NAME):
+    """
+    Generator that yields token chunks from Ollama streaming API.
+    Never raises; yields at least one fallback string on failure.
+    """
+    try:
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": True,
+        }
+        with requests.post(
+            f"{OLLAMA_HOST}/api/generate",
+            json=payload,
+            timeout=TIMEOUT,
+            stream=True,
+        ) as response:
+            try:
+                response.raise_for_status()
+            except Exception:
+                yield (
+                    "AI stream unavailable: non-200 response from Ollama"
+                )
+                return
+
+            # Stream lines/chunks as they arrive
+            for raw in response.iter_lines(decode_unicode=True):
+                if raw:
+                    # yield decoded chunk
+                    yield raw
+            return
+    except Exception as e:
+        logger.error(f"call_ollama_stream error: {e}")
+        yield (
+            "AI analysis streaming unavailable. Ensure Ollama is running and model is pulled."
+        )
+        return
 
 def call_huggingface_inference(prompt: str, model: str, token: str) -> str:
     """Call the Hugging Face Inference API (simple POST /models/{model}).

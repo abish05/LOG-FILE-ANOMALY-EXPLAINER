@@ -1,3 +1,76 @@
+# LogSage AI
+
+![status](https://img.shields.io/badge/status-ready-brightgreen)
+
+LogSage AI is an AI-powered log file anomaly explainer that analyzes logs, identifies anomalies, and generates actionable remediation steps and executive summaries.
+
+Quick Start (exactly 5 commands)
+--------------------------------
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python -c "from database.db import init_db; init_db()"
+streamlit run app.py
+```
+
+Folder structure
+----------------
+```
+LogSage-AI/
+├─ agent/
+├─ database/
+├─ parser/
+├─ reports/
+├─ sample_logs/
+├─ tests/
+├─ docs/
+└─ app.py
+```
+
+Features
+--------
+| Feature | Description |
+|---|---|
+| AI analysis | Per-anomaly LLM diagnosis and remediation |
+| Streaming | Optional live token streaming of LLM output |
+| Reports | PDF and CSV generation |
+| Persistence | SQLite incident history |
+
+Troubleshooting (5 common issues)
+-------------------------------
+1. Ollama not running — run `ollama serve` and `ollama pull llama3`.
+2. Tests failing — ensure virtualenv activated and `pip install -r requirements.txt` succeeded.
+3. PDF generation errors — ensure `reportlab` installed and `REPORT_OUTPUT_DIR` writable.
+4. AI offline — set `HF_API_TOKEN` for cloud fallback.
+5. Large logs time out — analyze smaller samples or increase timeouts.
+
+Architecture — 7-step agent loop
+--------------------------------
+1. Read parsed data
+2. Detect anomalies
+3. Extract ±20 lines context
+4. Analyze with LLM (per anomaly)
+5. Classify severity
+6. Generate executive summary
+7. Assemble final report
+
+Tech stack
+----------
+| Component | Technology |
+|---|---|
+| Frontend | Streamlit |
+| AI | Ollama (local) / Hugging Face fallback |
+| DB | SQLite |
+| Reports | ReportLab |
+
+Contributing
+------------
+Contributions welcome via pull requests. Please run tests before submitting.
+
+License
+-------
+MIT
 # LogSage AI — Incident Report Generator
 
 LogSage AI is an intelligent log file analyzer designed to assist on-call engineers by automating the interpretation of production logs. It leverages local Large Language Models (Ollama) to pinpoint anomalies, identify root causes, calculate severities, and prescribe concrete remediation steps.

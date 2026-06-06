@@ -315,6 +315,22 @@ if nav_selection == "🏠 Analyze Logs":
                 st.code(a.get('line_text',''), language='text')
 
             # Button to run full AI analysis (may be slow)
+            stream_tokens = st.checkbox("Stream LLM tokens live", value=False, help="Show incremental tokens from the LLM during analysis")
+
+            if 'token_stream' not in st.session_state:
+                st.session_state['token_stream'] = []
+
+            tokens_box = st.empty()
+
+            def _token_callback(anomaly_idx, token_chunk):
+                # append and update UI safely
+                try:
+                    st.session_state['token_stream'].append(f"Anomaly {anomaly_idx+1}: {token_chunk}")
+                    tokens_box.code('\n'.join(st.session_state['token_stream']), language='text')
+                except Exception:
+                    # ensure UI callback never breaks analysis
+                    pass
+
             if st.button("🚀 Run AI Analysis (may take minutes)"):
                 if not st.session_state["ollama_online"] and not os.getenv("HF_API_TOKEN"):
                     st.error("Cannot run AI analysis while AI is offline. Please start your local AI or provide a cloud API token.")
@@ -324,11 +340,17 @@ if nav_selection == "🏠 Analyze Logs":
                         status_text = st.empty()
 
                         status_text.text("Running Agent Loop for AI Analysis...")
+                        # clear previous token stream
+                        st.session_state['token_stream'] = []
+                        tokens_box.code('', language='text')
+
                         report = run_agent_loop(
                             parsed_data,
                             filename,
                             progress_callback=progress_bar.progress,
-                            status_callback=status_text.text
+                            status_callback=status_text.text,
+                            token_callback=(_token_callback if stream_tokens else None),
+                            stream=bool(stream_tokens)
                         )
                         progress_bar.progress(100)
 

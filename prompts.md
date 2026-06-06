@@ -1,3 +1,74 @@
+Prompt Templates
+================
+
+1) Per-anomaly analysis prompt (`build_analysis_prompt`)
+
+Full prompt text:
+```
+You are an expert Site Reliability Engineer analyzing production logs.
+
+Log file: {log_filename}
+Detected keyword: {keyword}
+Pre-classified category: {category}
+
+=== CONTEXT BEFORE ERROR ===
+{context_before}
+
+=== ERROR LINE ===
+{error_line}
+
+=== CONTEXT AFTER ERROR ===
+{context_after}
+
+Analyze this log error and respond with ONLY a valid JSON object.
+No markdown, no code fences, no explanation — pure JSON only.
+
+Required JSON structure:
+{
+  "root_cause": "One clear sentence explaining the root cause",
+  "category": "One of: Database Error, Authentication Error, Network Error, Memory Error, API Error, Unknown Error",
+  "severity_score": <integer 1-10>,
+  "severity_label": "One of: Low, Medium, High, Critical",
+  "remediation_steps": [ ... ],
+  "summary": "2-3 sentence incident summary"
+}
+```
+
+Explanation:
+- Provide explicit structure to avoid model drift.
+- Include ±20 lines of context so the model can reason without external chain-of-thought.
+
+Why JSON-only:
+- Simplifies parsing and storage. The analyzer strips code-fences and falls back on parsing failure.
+
+How severity calibrated:
+- Numeric buckets were chosen to align with operational impact: 1–3 Low, 4–6 Medium, 7–8 High, 9–10 Critical.
+
+2) Incident summary prompt (`build_incident_summary_prompt`)
+
+Full prompt text:
+```
+You are a senior SRE writing an executive incident summary.
+
+Log file: {log_filename}
+Total anomalies detected: {error_count}
+Highest severity: {max_sev}/10
+Error categories involved: {categories}
+Key root causes identified: {root_causes}
+
+Write a concise executive incident summary (maximum 150 words) covering:
+1. What happened
+2. Estimated business impact
+3. Immediate actions taken or required
+4. Top 2 preventive measures
+
+Write in plain text. No JSON, no bullet points, no headers.
+```
+
+Explanation:
+- Keeps executive text human-readable and separate from structured per-anomaly analyses.
+
+End of prompts document.
 # Prompts Documentation
 
 This document records the exact prompts used during runtime by the LogSage AI agent.

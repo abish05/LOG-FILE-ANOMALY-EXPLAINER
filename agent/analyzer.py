@@ -7,14 +7,20 @@ import json
 import logging
 from datetime import datetime, timezone
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Callable, Optional
 
-from .ollama_client import call_ollama
+from .ollama_client import call_ollama, call_ollama_stream
 from .prompt_templates import build_analysis_prompt, build_incident_summary_prompt
 
 logger = logging.getLogger(__name__)
 
-def run_agent_loop(parsed_data: Dict[str, Any], log_filename: str, progress_callback=None, status_callback=None) -> Dict[str, Any]:
+def run_agent_loop(parsed_data: Dict[str, Any],
+                   log_filename: str,
+                   progress_callback: Optional[Callable[[int], None]] = None,
+                   status_callback: Optional[Callable[[str], None]] = None,
+                   token_callback: Optional[Callable[[int, str], None]] = None,
+                   stream: bool = False
+                   ) -> Dict[str, Any]:
     """
     Executes the 7-step agent loop to process parsed log data into a final report.
 
@@ -59,8 +65,27 @@ def run_agent_loop(parsed_data: Dict[str, Any], log_filename: str, progress_call
             progress_callback(20 + int((idx / max(len(anomalies), 1)) * 60))
             
         prompt = build_analysis_prompt(anomaly, log_filename)
-        raw_response = call_ollama(prompt, model=model_name)
-        
+
+        # If streaming is requested and a token_callback is provided, stream tokens
+        raw_response = ""
+        if stream and token_callback:
+            try:
+                parts = []
+                for chunk in call_ollama_stream(prompt, model=model_name):
+                    # forward token to UI callback
+                    try:
+                        token_callback(idx, chunk)
+                    except Exception:
+                        # UI callback must not break analysis
+                        logger.debug("token_callback raised; continuing")
+                    parts.append(chunk)
+                raw_response = "".join(parts)
+            except Exception as e:
+                logger.warning(f"Streaming LLM failed: {e}")
+                raw_response = ""
+        else:
+            raw_response = call_ollama(prompt, model=model_name)
+
         # Safely parse JSON
         try:
             # Strip potential markdown code blocks like ```json ... ```
@@ -71,17 +96,17 @@ def run_agent_loop(parsed_data: Dict[str, Any], log_filename: str, progress_call
                 clean_response = clean_response[3:]
             if clean_response.endswith("```"):
                 clean_response = clean_response[:-3]
-                
+
             analysis_dict = json.loads(clean_response)
         except (json.JSONDecodeError, Exception) as e:
             logger.warning(f"Failed to parse LLM JSON response: {e}. Using fallback.")
             analysis_dict = {
-                "root_cause": "AI parse error. Raw response: " + raw_response[:100] + "...",
-                "category": "Unknown Error",
+                "root_cause": "AI parse error. Raw response trimmed.",
+                "category": anomaly.get("category", "Unknown Error"),
                 "severity_score": 5,
                 "severity_label": "Medium",
                 "remediation_steps": [],
-                "summary": "N/A"
+                "summary": "Analysis unavailable."
             }
             
         # Merge analysis with original anomaly data
