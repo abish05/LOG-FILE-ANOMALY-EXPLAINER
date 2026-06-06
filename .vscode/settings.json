@@ -3,6 +3,11 @@
   "python.analysis.extraPaths": [
     "${workspaceFolder}"
   ],
-  "python.linting.enabled": true,
-  "python.linting.pylintEnabled": true
+  "python.analysis.venvPath": "${workspaceFolder}",
+  "python.analysis.venv": "venv",
+  "python.linting.enabled": false,
+  "pyrefly.pythonInterpreter": "${workspaceFolder}/venv/bin/python",
+  "pyrefly.venv": "${workspaceFolder}/venv",
+  "pyright.venvPath": "${workspaceFolder}",
+  "pyright.venv": "venv"
 }

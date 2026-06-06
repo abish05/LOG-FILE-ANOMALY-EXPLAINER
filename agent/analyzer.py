@@ -1,163 +1,226 @@
-"""
-Agent orchestrator for LogSage AI.
-Runs the 7-step agent loop to analyze log anomalies.
-"""
-
 import json
 import logging
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-import os
-from typing import Dict, Any, Callable, Optional
+from typing import Any, Dict, List
 
-from .ollama_client import call_ollama, call_ollama_stream
-from .prompt_templates import build_analysis_prompt, build_incident_summary_prompt
+from agent.ollama_client import call_ollama
+from agent.prompt_templates import (
+    build_analysis_prompt,
+    build_incident_summary_prompt,
+    get_severity_label,
+)
 
 logger = logging.getLogger(__name__)
 
-def run_agent_loop(parsed_data: Dict[str, Any],
-                   log_filename: str,
-                   progress_callback: Optional[Callable[[int], None]] = None,
-                   status_callback: Optional[Callable[[str], None]] = None,
-                   token_callback: Optional[Callable[[int, str], None]] = None,
-                   stream: bool = False
-                   ) -> Dict[str, Any]:
-    """
-    Executes the 7-step agent loop to process parsed log data into a final report.
+# JSON extraction: match the first {...} block (handles markdown fences gracefully)
+_JSON_RE = re.compile(r'\{[\s\S]+\}', re.MULTILINE)
 
-    Args:
-        parsed_data (dict): The output from parse_log_file.
-        log_filename (str): The name of the analyzed log file.
-        progress_callback (callable, optional): Callback to update progress bar.
-        status_callback (callable, optional): Callback to update status text.
+# Capture the body between ``` fences (optional "json" language tag)
+_FENCE_RE = re.compile(r'```(?:json)?\s*([\s\S]+?)\s*```', re.IGNORECASE)
+
+# Maximum parallel LLM workers — keeps Ollama responsive without flooding it
+_MAX_WORKERS = 4
+
+
+def _extract_json(raw: str) -> dict:
+    """
+    Robustly extract a JSON object from an LLM response.
+    Handles: plain JSON, ```json fences, partial markdown, whitespace noise.
+    Returns a dict or raises ValueError / JSONDecodeError.
+    """
+    stripped = raw.strip()
+
+    # Fast-path: already clean JSON
+    if stripped.startswith("{"):
+        try:
+            return json.loads(stripped)
+        except json.JSONDecodeError:
+            pass
+
+    # Strip markdown code fences and try the inner content
+    fence_match = _FENCE_RE.search(stripped)
+    if fence_match:
+        inner = fence_match.group(1).strip()
+        try:
+            return json.loads(inner)
+        except json.JSONDecodeError:
+            pass
+
+    # Try to grab the first {...} block anywhere in the response
+    block_match = _JSON_RE.search(stripped)
+    if block_match:
+        try:
+            return json.loads(block_match.group())
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError(f"No valid JSON found in LLM response: {stripped[:200]}")
+
+
+def _analyze_single(
+    index: int,
+    anomaly: Dict[str, Any],
+    log_filename: str,
+    total: int,
+) -> Dict[str, Any]:
+    """Analyze one anomaly via LLM. Called in a thread."""
+    logger.info(
+        f"  Analyzing anomaly {index + 1}/{total} "
+        f"(line {anomaly.get('line_number')})"
+    )
+    prompt = build_analysis_prompt(anomaly, log_filename)
+    raw_response = call_ollama(prompt)
+
+    try:
+        analysis = _extract_json(raw_response)
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(
+            f"JSON parse failed for anomaly {index + 1}: {e}. Using fallback."
+        )
+        analysis = {
+            "root_cause": "AI parse error — check Ollama logs",
+            "category": anomaly.get("category", "Unknown Error"),
+            "severity_score": 5,
+            "severity_label": "Medium",
+            "remediation_steps": [
+                "Review error manually",
+                "Check Ollama model response",
+                "Re-run analysis",
+            ],
+            "summary": "Analysis could not be parsed from LLM response.",
+        }
+
+    # Normalize and annotate
+    analysis["line_number"] = anomaly.get("line_number")
+    analysis["matched_keyword"] = anomaly.get("matched_keyword")
+    analysis["line_text"] = anomaly.get("line_text")
+    analysis["context_before"] = anomaly.get("context_before", [])
+    analysis["context_after"] = anomaly.get("context_after", [])
+    analysis["severity_score"] = max(
+        1, min(10, int(analysis.get("severity_score", 5)))
+    )
+    analysis["severity_label"] = get_severity_label(analysis["severity_score"])
+    return analysis
+
+
+def run_agent_loop(
+    parsed_data: Dict[str, Any],
+    log_filename: str,
+) -> Dict[str, Any]:
+    """
+    Execute the 7-step LogSage AI agent loop.
+
+    Steps:
+        1. Read & validate parsed data
+        2. Detect anomalies
+        3. Extract context windows
+        4. Analyze each anomaly with LLM  ← now runs in parallel
+        5. Classify severity distribution
+        6. Generate executive summary
+        7. Assemble final incident report
 
     Returns:
-        dict: The complete incident report.
+        Complete incident report dict
     """
-    logger.info("Starting Agent Loop")
-    model_name = os.getenv("MODEL_NAME", "llama3")
+    logger.info("=== Agent Loop START ===")
 
-    # Step 1 - Read
-    logger.info("Step 1: Read parsed data")
+    # Step 1 — Validate
+    logger.info("Step 1: Validating parsed log data")
     if "anomalies" not in parsed_data:
-        raise ValueError("Parsed data is missing the 'anomalies' key.")
-        
-    # Step 2 - Detect
-    logger.info("Step 2: Detect anomalies")
-    
-    # Cap to top 5 anomalies to prevent massive wait times and timeout freezes
-    all_anomalies = parsed_data["anomalies"]
-    anomalies = all_anomalies[:5] 
-    
-    if not anomalies:
-        logger.info("No anomalies detected.")
-    elif len(all_anomalies) > 5:
-        logger.info(f"Capped analysis to first 5 anomalies out of {len(all_anomalies)}")
-    
-    anomaly_analyses = []
-    
-    # Steps 3 & 4 - Context Extract & Analyze
-    logger.info(f"Step 3 & 4: Extract context and analyze {len(anomalies)} anomalies")
-    for idx, anomaly in enumerate(anomalies):
-        logger.info(f"Analyzing anomaly {idx + 1}/{len(anomalies)}")
-        if status_callback:
-            status_callback(f"Analyzing anomaly {idx + 1}/{len(anomalies)}: {anomaly.get('category', 'Unknown')}")
-        if progress_callback:
-            progress_callback(20 + int((idx / max(len(anomalies), 1)) * 60))
-            
-        prompt = build_analysis_prompt(anomaly, log_filename)
+        raise ValueError(
+            "parsed_data missing 'anomalies' key. "
+            "Ensure parse_log_file() ran successfully."
+        )
 
-        # If streaming is requested and a token_callback is provided, stream tokens
-        raw_response = ""
-        if stream and token_callback:
+    # Step 2 — Extract
+    logger.info("Step 2: Extracting anomalies")
+    anomalies: List[Dict[str, Any]] = parsed_data["anomalies"]
+    total_lines: int = parsed_data.get("total_lines", 0)
+    category_counts: Dict[str, int] = parsed_data.get("category_counts", {})
+    logger.info(f"Found {len(anomalies)} anomalies to analyze")
+
+    # Step 3 — Build full context windows
+    logger.info("Step 3: Building context windows for each anomaly")
+    for anomaly in anomalies:
+        lines = (
+            anomaly.get("context_before", [])
+            + [anomaly.get("line_text", "")]
+            + anomaly.get("context_after", [])
+        )
+        anomaly["full_context"] = "\n".join(lines)
+
+    # Step 4 — Parallel LLM analysis
+    logger.info(
+        f"Step 4: Running parallel LLM analysis on {len(anomalies)} anomalies "
+        f"(workers={_MAX_WORKERS})"
+    )
+    anomaly_analyses: List[Dict[str, Any]] = [None] * len(anomalies)  # type: ignore
+
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+        futures = {
+            pool.submit(
+                _analyze_single, i, anomaly, log_filename, len(anomalies)
+            ): i
+            for i, anomaly in enumerate(anomalies)
+        }
+        for future in as_completed(futures):
+            idx = futures[future]
             try:
-                parts = []
-                for chunk in call_ollama_stream(prompt, model=model_name):
-                    # forward token to UI callback
-                    try:
-                        token_callback(idx, chunk)
-                    except Exception:
-                        # UI callback must not break analysis
-                        logger.debug("token_callback raised; continuing")
-                    parts.append(chunk)
-                raw_response = "".join(parts)
-            except Exception as e:
-                logger.warning(f"Streaming LLM failed: {e}")
-                raw_response = ""
-        else:
-            raw_response = call_ollama(prompt, model=model_name)
+                anomaly_analyses[idx] = future.result()
+            except Exception as exc:
+                logger.error(f"Anomaly {idx + 1} analysis raised: {exc}")
+                anomaly = anomalies[idx]
+                anomaly_analyses[idx] = {
+                    "root_cause": f"Analysis error: {exc}",
+                    "category": anomaly.get("category", "Unknown Error"),
+                    "severity_score": 5,
+                    "severity_label": "Medium",
+                    "remediation_steps": ["Review error manually"],
+                    "summary": "Analysis failed due to an unexpected error.",
+                    "line_number": anomaly.get("line_number"),
+                    "matched_keyword": anomaly.get("matched_keyword"),
+                    "line_text": anomaly.get("line_text"),
+                    "context_before": anomaly.get("context_before", []),
+                    "context_after": anomaly.get("context_after", []),
+                }
 
-        # Safely parse JSON
-        try:
-            # Strip potential markdown code blocks like ```json ... ```
-            clean_response = raw_response.strip()
-            if clean_response.startswith("```json"):
-                clean_response = clean_response[7:]
-            elif clean_response.startswith("```"):
-                clean_response = clean_response[3:]
-            if clean_response.endswith("```"):
-                clean_response = clean_response[:-3]
+    # Step 5 — Severity classification
+    logger.info("Step 5: Computing severity distribution")
+    severity_dist: Dict[str, int] = {
+        "Critical": 0, "High": 0, "Medium": 0, "Low": 0
+    }
+    scores = [a.get("severity_score", 5) for a in anomaly_analyses]
+    for a in anomaly_analyses:
+        label = a.get("severity_label", "Medium")
+        severity_dist[label] = severity_dist.get(label, 0) + 1
 
-            analysis_dict = json.loads(clean_response)
-        except (json.JSONDecodeError, Exception) as e:
-            logger.warning(f"Failed to parse LLM JSON response: {e}. Using fallback.")
-            analysis_dict = {
-                "root_cause": "AI parse error. Raw response trimmed.",
-                "category": anomaly.get("category", "Unknown Error"),
-                "severity_score": 5,
-                "severity_label": "Medium",
-                "remediation_steps": [],
-                "summary": "Analysis unavailable."
-            }
-            
-        # Merge analysis with original anomaly data
-        combined = {**anomaly, **analysis_dict}
-        anomaly_analyses.append(combined)
+    max_severity = max(scores) if scores else 0
+    avg_severity = round(sum(scores) / len(scores), 1) if scores else 0.0
 
-    # Step 5 - Severity metrics
-    logger.info("Step 5: Compute severity metrics")
-    max_severity = 0
-    total_severity = 0
-    severity_distribution = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
-    
-    for analysis in anomaly_analyses:
-        score = int(analysis.get("severity_score", 0))
-        max_severity = max(max_severity, score)
-        total_severity += score
-        
-        if score >= 9:
-            severity_distribution["Critical"] += 1
-        elif score >= 7:
-            severity_distribution["High"] += 1
-        elif score >= 4:
-            severity_distribution["Medium"] += 1
-        else:
-            severity_distribution["Low"] += 1
-            
-    avg_severity = total_severity / len(anomaly_analyses) if anomaly_analyses else 0.0
+    # Step 6 — Executive summary (single sequential call)
+    logger.info("Step 6: Generating executive summary")
+    summary_prompt = build_incident_summary_prompt(anomaly_analyses, log_filename)
+    executive_summary = call_ollama(summary_prompt)
+    # If Ollama returned JSON instead of prose, replace it gracefully
+    if executive_summary.strip().startswith("{"):
+        executive_summary = "See individual anomaly analyses for details."
 
-    # Step 6 - Recommendations (Executive Summary)
-    logger.info("Step 6: Generate executive summary")
-    if anomaly_analyses:
-        summary_prompt = build_incident_summary_prompt(anomaly_analyses, log_filename)
-        executive_summary = call_ollama(summary_prompt, model=model_name)
-    else:
-        executive_summary = "No anomalies were detected in the log file."
-
-    # Step 7 - Report
-    logger.info("Step 7: Assemble final report")
-    final_report = {
+    # Step 7 — Assemble final report
+    logger.info("Step 7: Assembling final incident report")
+    final_report: Dict[str, Any] = {
         "log_filename": log_filename,
         "analysis_timestamp": datetime.now(timezone.utc).isoformat(),
-        "total_lines": parsed_data.get("total_lines", 0),
-        "errors_found": parsed_data.get("errors_found", 0),
-        "category_counts": parsed_data.get("category_counts", {}),
-        "severity_distribution": severity_distribution,
+        "total_lines": total_lines,
+        "errors_found": len(anomaly_analyses),
+        "category_counts": category_counts,
+        "severity_distribution": severity_dist,
         "max_severity": max_severity,
-        "avg_severity": round(avg_severity, 2),
+        "avg_severity": avg_severity,
         "anomaly_analyses": anomaly_analyses,
-        "executive_summary": executive_summary.strip(),
-        "agent_steps_completed": 7
+        "executive_summary": executive_summary,
+        "agent_steps_completed": 7,
     }
-
-    logger.info("Agent Loop Completed")
+    logger.info("=== Agent Loop COMPLETE ===")
     return final_report

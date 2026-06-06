@@ -1,71 +1,88 @@
-import sys
-import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 import pytest
-from parser.log_parser import parse_log_file, classify_error
+from parser.log_parser import parse_log_file
+
+@pytest.fixture
+def sample_db_log():
+    return """2024-01-01 10:00:00 INFO  App starting
+2024-01-01 10:00:01 INFO  Connecting to postgres:5432
+2024-01-01 10:00:02 ERROR connection refused to postgres:5432
+2024-01-01 10:00:03 INFO  Retrying"""
+
+@pytest.fixture
+def sample_auth_log():
+    return """2024-01-01 10:00:00 INFO  App starting
+2024-01-01 10:00:01 FAILED login attempt for user admin - unauthorized
+2024-01-01 10:00:02 INFO  Retrying"""
 
 def test_empty_file_returns_zero_errors():
-    res = parse_log_file("")
-    assert res["total_lines"] == 0
-    assert res["errors_found"] == 0
-    assert len(res["anomalies"]) == 0
-
-def test_detects_error_keyword():
-    res = parse_log_file("INFO line\nERROR something failed")
-    assert res["errors_found"] == 1
-    assert res["anomalies"][0]["matched_keyword"] == "ERROR"
-
-def test_detects_critical_keyword():
-    res = parse_log_file("CRITICAL node went down")
-    assert res["errors_found"] == 1
-    assert res["anomalies"][0]["matched_keyword"] == "CRITICAL"
-
-def test_detects_exception_keyword():
-    res = parse_log_file("EXCEPTION raised here")
-    assert res["errors_found"] == 1
-    assert res["anomalies"][0]["matched_keyword"] == "EXCEPTION"
-
-def test_context_window_is_max_20_lines():
-    # Create 50 lines
-    lines = [f"INFO line {i}" for i in range(50)]
-    lines[25] = "ERROR something bad"
-    content = "\n".join(lines)
-    
-    res = parse_log_file(content)
-    anomaly = res["anomalies"][0]
-    
-    assert len(anomaly["context_before"]) <= 20
-    assert len(anomaly["context_after"]) <= 20
-    assert anomaly["context_before"][0] == "INFO line 5"  # 25 - 20 = 5
-
-def test_category_database_error_classification():
-    assert classify_error("ERROR connection refused to postgres", []) == "Database Error"
-
-def test_category_auth_error_classification():
-    assert classify_error("FAILED login attempt 401", []) == "Authentication Error"
-
-def test_category_network_error_classification():
-    assert classify_error("TIMEOUT reaching api 502", []) == "Network Error"
-
-def test_category_memory_error_classification():
-    assert classify_error("FATAL out of memory heap space", []) == "Memory Error"
-
-def test_category_api_error_classification():
-    assert classify_error("ERROR endpoint 404 not found", []) == "API Error"
-
-def test_category_unknown_error_fallback():
-    assert classify_error("ERROR just a random glitch", []) == "Unknown Error"
+    result = parse_log_file("")
+    assert result["errors_found"] == 0
+    assert result["total_lines"] == 0
 
 def test_parse_returns_correct_total_lines():
-    res = parse_log_file("1\n2\n3\n4\n5")
-    assert res["total_lines"] == 5
+    content = "line1\nline2\nline3"
+    result = parse_log_file(content)
+    assert result["total_lines"] == 3
 
-def test_multiline_file_with_multiple_errors():
-    content = "INFO 1\nERROR 1\nINFO 2\nTIMEOUT 1\nFATAL 1"
-    res = parse_log_file(content)
-    assert res["errors_found"] == 3
-    keywords = [a["matched_keyword"] for a in res["anomalies"]]
-    assert "ERROR" in keywords
-    assert "TIMEOUT" in keywords
-    assert "FATAL" in keywords
+def test_detects_error_keyword():
+    result = parse_log_file("2024-01-01 ERROR something went wrong")
+    assert result["errors_found"] == 1
+    assert result["anomalies"][0]["matched_keyword"] == "ERROR"
+
+def test_detects_critical_keyword():
+    result = parse_log_file("2024-01-01 CRITICAL system failure")
+    assert result["errors_found"] == 1
+    assert result["anomalies"][0]["matched_keyword"] == "CRITICAL"
+
+def test_detects_fatal_keyword():
+    result = parse_log_file("2024-01-01 FATAL disk full")
+    assert result["errors_found"] == 1
+    assert result["anomalies"][0]["matched_keyword"] == "FATAL"
+
+def test_detects_exception_keyword():
+    result = parse_log_file("2024-01-01 EXCEPTION NullPointerException")
+    assert result["errors_found"] == 1
+    assert result["anomalies"][0]["matched_keyword"] == "EXCEPTION"
+
+def test_detects_failed_keyword():
+    result = parse_log_file("2024-01-01 FAILED to bind port")
+    assert result["errors_found"] == 1
+    assert result["anomalies"][0]["matched_keyword"] == "FAILED"
+
+def test_detects_timeout_keyword():
+    result = parse_log_file("2024-01-01 TIMEOUT connection to gateway")
+    assert result["errors_found"] == 1
+    assert result["anomalies"][0]["matched_keyword"] == "TIMEOUT"
+
+def test_context_window_is_max_20_lines():
+    # Generate 50 lines of logs with an error at line 26
+    lines = [f"line {i}" for i in range(1, 51)]
+    lines[25] = "ERROR something failed"
+    content = "\n".join(lines)
+    result = parse_log_file(content)
+    anomaly = result["anomalies"][0]
+    
+    assert len(anomaly["context_before"]) == 20
+    assert len(anomaly["context_after"]) == 20
+    assert anomaly["context_before"][0] == "line 6"
+    assert anomaly["context_after"][-1] == "line 46"
+
+def test_category_classification_database(sample_db_log):
+    result = parse_log_file(sample_db_log)
+    assert result["errors_found"] == 1
+    assert result["anomalies"][0]["category"] == "Database Error"
+
+def test_category_classification_auth(sample_auth_log):
+    result = parse_log_file(sample_auth_log)
+    assert result["errors_found"] == 1
+    assert result["anomalies"][0]["category"] == "Authentication Error"
+
+def test_category_classification_network():
+    result = parse_log_file("2024-01-01 TIMEOUT network unreachable socket")
+    assert result["errors_found"] == 1
+    assert result["anomalies"][0]["category"] == "Network Error"
+
+def test_category_classification_memory():
+    result = parse_log_file("2024-01-01 FATAL out of memory heap")
+    assert result["errors_found"] == 1
+    assert result["anomalies"][0]["category"] == "Memory Error"

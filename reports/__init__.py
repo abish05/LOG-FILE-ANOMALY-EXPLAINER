@@ -1,1 +1,1 @@
-# Empty init file to mark package
+"""Reports package."""

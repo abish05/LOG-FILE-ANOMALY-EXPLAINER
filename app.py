@@ -1,444 +1,405 @@
-"""
-Streamlit frontend for LogSage AI.
-Provides UI for log upload, incident history, and report downloads.
-"""
+import os
+import logging
+from pathlib import Path
 
 # pyrefly: ignore [missing-import]
 import streamlit as st
-import os
-import json
-import tempfile
 # pyrefly: ignore [missing-import]
 import plotly.graph_objects as go
-from datetime import datetime
-# pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
 
-from database.db import init_db, save_incident, get_incident_history, get_incident_by_id, delete_incident
+load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+from database.db import init_db, save_incident, get_incident_history, \
+    get_incident_by_id, delete_incident
 from parser.log_parser import parse_log_file
 from agent.analyzer import run_agent_loop
 from agent.ollama_client import is_ollama_available
 from reports.report_generator import generate_pdf, generate_csv
 
-# Load env variables
-load_dotenv()
-
-# Initialize DB at module level
-try:
-    init_db()
-except Exception as e:
-    st.error(f"Failed to initialize database: {e}")
-
-# Page config
 st.set_page_config(
     page_title="LogSage AI",
     page_icon="🔍",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# --- Premium Custom CSS Injection ---
-st.markdown("""
-<style>
-    /* Import modern font */
-    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
-    
-    html, body, [class*="css"] {
-        font-family: 'Outfit', sans-serif !important;
-    }
-    
-    /* Main Background & Text */
-    .stApp {
-        background: radial-gradient(circle at top right, #131722, #0d1117);
-        color: #e6edf3;
-    }
+# ── inject custom CSS ──────────────────────────────────────────────────────────
+st.markdown("""<style>
+#MainMenu,footer,[data-testid="stToolbar"]{visibility:hidden}
+[data-testid="stSidebar"]{background:#F1EFE8}
+[data-testid="metric-container"]{background:#F1EFE8;border-radius:8px;padding:14px!important}
+[data-testid="metric-container"] label{font-size:11px!important;text-transform:uppercase;letter-spacing:.06em;color:#888780!important}
+[data-testid="stFileUploader"]{border:1.5px dashed rgba(0,0,0,.2)!important;border-radius:12px!important;background:#F1EFE8!important}
+[data-testid="stExpander"]{border:0.5px solid rgba(0,0,0,.1)!important;border-radius:8px!important;overflow:hidden}
+[data-testid="stExpander"] summary{background:#F1EFE8!important;font-size:13px!important;font-weight:500!important}
+.stButton>button[kind="primary"]{background:#E24B4A!important;color:#fff!important;border:none!important;border-radius:8px!important;font-weight:500!important}
+.stButton>button[kind="primary"]:hover{opacity:.88!important}
+.stTabs [data-baseweb="tab"]{font-size:13px!important;font-weight:500!important}
+.stTabs [aria-selected="true"]{color:#E24B4A!important;border-bottom-color:#E24B4A!important}
+div[data-testid="stAlert"]{border-radius:8px!important;font-size:13px!important}
+</style>""", unsafe_allow_html=True)
 
-    /* Glassmorphism Metrics */
-    div[data-testid="metric-container"] {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        padding: 20px;
-        border-radius: 16px;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-        transition: transform 0.3s ease, border-color 0.3s ease;
-    }
-    
-    div[data-testid="metric-container"]:hover {
-        transform: translateY(-5px);
-        border-color: #00d2ff;
-    }
+# ── init DB ────────────────────────────────────────────────────────────────────
+try:
+    init_db()
+except Exception as e:
+    st.error(f"Database init failed: {e}")
 
-    /* Primary Button Styling */
-    div.stButton > button:first-child {
-        background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
-        color: white;
-        border: none;
-        border-radius: 12px;
-        padding: 10px 24px;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(0, 210, 255, 0.3);
-    }
-    
-    div.stButton > button:first-child:hover {
-        transform: translateY(-2px) scale(1.02);
-        box-shadow: 0 6px 20px rgba(0, 210, 255, 0.5);
-    }
-    
-    /* File Uploader styling */
-    section[data-testid="stFileUploadDropzone"] {
-        background: rgba(255, 255, 255, 0.02) !important;
-        border: 2px dashed rgba(255, 255, 255, 0.15) !important;
-        border-radius: 16px !important;
-        transition: all 0.3s ease !important;
-    }
-    
-    section[data-testid="stFileUploadDropzone"]:hover {
-        border-color: #3a7bd5 !important;
-        background: rgba(58, 123, 213, 0.05) !important;
-    }
-    
-    /* Expanders styling */
-    .streamlit-expanderHeader {
-        background-color: rgba(255, 255, 255, 0.05) !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-    }
-    
-    /* Info / Success boxes */
-    div.stAlert {
-        border-radius: 12px;
-        border: none;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-    
-    /* Sidebar styling */
-    section[data-testid="stSidebar"] {
-        background-color: rgba(13, 17, 23, 0.95);
-        border-right: 1px solid rgba(255, 255, 255, 0.05);
-    }
-</style>
-""", unsafe_allow_html=True)
+# ── session state defaults ─────────────────────────────────────────────────────
+if "last_report" not in st.session_state:
+    st.session_state["last_report"] = None
+if "ollama_status" not in st.session_state:
+    st.session_state["ollama_status"] = is_ollama_available()
 
-# --- Sidebar ---
+# ── sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.title("🔍 LogSage AI")
-    
-    nav_selection = st.radio("Navigation", ["🏠 Analyze Logs", "📜 Incident History", "ℹ️ About"])
-    
-    st.markdown("---")
-    
-    with st.expander("⚙️ Advanced Settings"):
-        # Allow dynamic URL override for cloud deployments
-        current_host = st.session_state.get("ollama_host", os.getenv("OLLAMA_HOST", "http://localhost:11434"))
-        new_host = st.text_input("Local AI URL", value=current_host, help="If running on Render, paste your localtunnel URL here.")
-        
-        if new_host != current_host:
-            os.environ["OLLAMA_HOST"] = new_host
-            st.session_state["ollama_host"] = new_host
-            st.session_state["ollama_online"] = is_ollama_available()
-        
-        # Check Ollama / Cloud status
-        has_hf_token = bool(os.getenv("HF_API_TOKEN"))
-        
-        if "ollama_online" not in st.session_state:
-            st.session_state["ollama_online"] = is_ollama_available()
-            
-        if st.session_state["ollama_online"]:
-            st.success("🟢 Local AI Online")
-        elif has_hf_token:
-            st.success("🟢 Cloud AI Online")
-        else:
-            st.error("🔴 AI Offline")
-            if st.button("Check Again"):
-                st.session_state["ollama_online"] = is_ollama_available()
-                st.rerun()
-                
-        model_name = st.selectbox("Model", ["llama3", "llama2", "mistral"], index=0)
-        # Update env var to affect analyzer
-        os.environ["MODEL_NAME"] = model_name
+    st.markdown("### 🔍 LogSage AI")
+    st.caption("v3.2.1 — AI Log Analyzer")
+    st.divider()
+    page = st.radio(
+        "Navigation",
+        ["🏠 Analyze Logs", "📜 Incident History", "ℹ️ About"],
+        label_visibility="collapsed"
+    )
+    st.divider()
+    ollama_ok = st.session_state["ollama_status"]
+    if ollama_ok:
+        st.success("🟢 Ollama online")
+    else:
+        st.error("🔴 Ollama offline")
+        st.caption("Run: `ollama serve`\nThen: `ollama pull llama3`")
+    if st.button("↻ Refresh status", use_container_width=True):
+        st.session_state["ollama_status"] = is_ollama_available()
+        st.rerun()
+    st.divider()
+    model = st.selectbox(
+        "Model", ["llama3", "llama3:8b", "mistral"], index=0
+    )
+    os.environ["MODEL_NAME"] = model
 
-# --- Helper Functions ---
-def render_dashboard(report):
-    # Metrics
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Lines", report.get("total_lines", 0))
-    c2.metric("Errors Found", report.get("errors_found", 0))
-    c3.metric("Max Severity", f'{report.get("max_severity", 0)}/10')
-    c4.metric("Avg Severity", report.get("avg_severity", 0.0))
-    
-    # Exec Summary
-    st.info(f"**Executive Summary:**\n\n{report.get('executive_summary', 'N/A')}")
-    
-    # Charts
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Category Distribution")
-        cat_counts = report.get("category_counts", {})
-        if cat_counts:
-            fig1 = go.Figure(data=[go.Pie(labels=list(cat_counts.keys()), values=list(cat_counts.values()), hole=.3)])
-            fig1.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(fig1, use_container_width=True)
-        else:
-            st.write("No category data available.")
-            
-    with col2:
-        st.subheader("Severity Distribution")
-        sev_counts = report.get("severity_distribution", {})
-        # Ensure order
-        ordered_sevs = ["Low", "Medium", "High", "Critical"]
-        vals = [sev_counts.get(s, 0) for s in ordered_sevs]
-        
-        fig2 = go.Figure(data=[go.Bar(x=ordered_sevs, y=vals, marker_color=['#2ca02c', '#ff7f0e', '#d62728', '#9467bd'])])
-        fig2.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig2, use_container_width=True)
+# ── severity helpers ───────────────────────────────────────────────────────────
+def sev_badge(score: int) -> str:
+    if score >= 9: return "🔴 Critical"
+    elif score >= 7: return "🟠 High"
+    elif score >= 4: return "🔵 Medium"
+    return "🟢 Low"
 
-def render_anomalies(report):
-    anomalies = report.get("anomaly_analyses", [])
-    if not anomalies:
-        st.info("No anomalies found.")
-        return
-        
-    for anomaly in anomalies:
-        line_no = anomaly.get("line_number", "?")
-        kw = anomaly.get("matched_keyword", "")
-        cat = anomaly.get("category", "")
-        sev_label = anomaly.get("severity_label", "")
-        sev_score = anomaly.get("severity_score", 0)
-        
-        with st.expander(f"Line {line_no} — {kw} — {cat}"):
-            st.markdown(f"**Severity:** {sev_score}/10 ({sev_label})")
-            st.markdown(f"**Root Cause:** {anomaly.get('root_cause', 'N/A')}")
-            
-            st.markdown("**Remediation Steps:**")
-            for i, step in enumerate(anomaly.get("remediation_steps", []), 1):
-                st.markdown(f"{i}. {step}")
-                
-            st.markdown("**Context:**")
-            context_lines = anomaly.get("context_before", []) + [anomaly.get("line_text", "")] + anomaly.get("context_after", [])
-            st.code("\n".join(context_lines), language="log")
+def sev_color(score: int) -> str:
+    if score >= 9: return "#A32D2D"
+    elif score >= 7: return "#854F0B"
+    elif score >= 4: return "#185FA5"
+    return "#3B6D11"
 
-def render_report_tab(report):
-    c1, c2 = st.columns(2)
-    
-    # Generate files in temp dir
-    temp_dir = os.getenv("REPORT_OUTPUT_DIR", tempfile.mkdtemp())
-    os.makedirs(temp_dir, exist_ok=True)
-    pdf_path = os.path.join(temp_dir, "incident_report.pdf")
-    csv_path = os.path.join(temp_dir, "anomalies.csv")
-    
-    try:
-        generate_pdf(report, pdf_path)
-        with open(pdf_path, "rb") as f:
-            pdf_bytes = f.read()
-        with c1:
-            st.download_button("⬇️ Download PDF Report", data=pdf_bytes, file_name="incident_report.pdf", mime="application/pdf")
-    except Exception as e:
-        c1.error(f"Failed to generate PDF: {e}")
-        
-    try:
-        generate_csv(report, csv_path)
-        with open(csv_path, "rb") as f:
-            csv_bytes = f.read()
-        with c2:
-            st.download_button("⬇️ Download CSV", data=csv_bytes, file_name="anomalies.csv", mime="text/csv")
-    except Exception as e:
-        c2.error(f"Failed to generate CSV: {e}")
-        
-    with st.expander("View Raw JSON"):
-        st.json(report)
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: ANALYZE LOGS
+# ══════════════════════════════════════════════════════════════════════════════
+if page == "🏠 Analyze Logs":
+    st.title("Analyze log file")
+    st.caption("Upload a .log or .txt file to begin AI-powered anomaly analysis")
 
-# --- Main App ---
-if nav_selection == "🏠 Analyze Logs":
-    st.header("Analyze Log File")
-    uploaded_file = st.file_uploader("Upload a log file", type=["log", "txt"])
-    
-    if uploaded_file is not None:
-        # Immediately parse uploaded file and show quick findings
-        try:
-            file_content = uploaded_file.getvalue().decode("utf-8")
-            filename = uploaded_file.name
-            # Parse on upload for instant feedback
-            parsed_data = parse_log_file(file_content)
-            st.success(f"Parsed {parsed_data.get('total_lines',0)} lines — found {parsed_data.get('errors_found',0)} potential errors")
+    uploaded = st.file_uploader(
+        "Drop your log file here",
+        type=["log", "txt"],
+        help="Max 200MB"
+    )
 
-            # Build a minimal report for parsed-only results (allows CSV download)
-            def build_minimal_report(parsed, log_filename):
-                minimal_anomalies = []
-                for a in parsed.get('anomalies', []):
-                    minimal_anomalies.append({
-                        'line_number': a.get('line_number'),
-                        'matched_keyword': a.get('matched_keyword'),
-                        'line_text': a.get('line_text'),
-                        'context_before': a.get('context_before', []),
-                        'context_after': a.get('context_after', []),
-                        'category': a.get('category', 'Unknown Error'),
-                        'severity_score': 5,
-                        'severity_label': 'Medium',
-                        'root_cause': 'Pending AI analysis',
-                        'remediation_steps': [],
-                        'summary': ''
-                    })
+    if uploaded:
+        file_content = uploaded.read().decode("utf-8", errors="replace")
+        st.success(
+            f"**{uploaded.name}** — {len(file_content.splitlines())} lines "
+            f"({round(len(file_content)/1024, 1)} KB)"
+        )
 
-                return {
-                    'log_filename': log_filename,
-                    'analysis_timestamp': datetime.now().isoformat(),
-                    'total_lines': parsed.get('total_lines', 0),
-                    'errors_found': parsed.get('errors_found', 0),
-                    'category_counts': parsed.get('category_counts', {}),
-                    'severity_distribution': {'Low':0,'Medium':len(minimal_anomalies),'High':0,'Critical':0},
-                    'max_severity': 5,
-                    'avg_severity': 5.0,
-                    'anomaly_analyses': minimal_anomalies,
-                    'executive_summary': 'Parsed-only report. Run AI Analysis for root cause and remediation.'
-                }
-
-            parsed_report = build_minimal_report(parsed_data, filename)
-            st.session_state['parsed_report'] = parsed_report
-
-            # Offer immediate download of parsed CSV
+        if st.button("🚀 Run AI Analysis", type="primary",
+                     use_container_width=False):
+            progress = st.progress(0, text="Starting agent loop...")
+            steps = [
+                (14, "Step 1 — Reading log file..."),
+                (28, "Step 2 — Detecting anomalies..."),
+                (42, "Step 3 — Extracting context windows..."),
+                (56, "Step 4 — Analyzing with LLM (may take a moment)..."),
+                (70, "Step 5 — Classifying severity..."),
+                (84, "Step 6 — Generating recommendations..."),
+                (100, "Step 7 — Assembling incident report..."),
+            ]
             try:
-                import io
-                csv_path = generate_csv(parsed_report, "/tmp/parsed_anomalies.csv")
-                with open(csv_path, 'rb') as f:
-                    st.download_button("⬇️ Download Parsed CSV", data=f, file_name="parsed_anomalies.csv", mime="text/csv")
-            except Exception:
-                st.warning("Parsed CSV download unavailable.")
+                progress.progress(steps[0][0], text=steps[0][1])
+                parsed = parse_log_file(file_content)
 
-            # Show quick anomalies summary (error line and category)
-            st.markdown("### Quick Findings")
-            for a in parsed_report.get('anomaly_analyses', []):
-                st.markdown(f"**Line {a.get('line_number')} — {a.get('matched_keyword')}** — {a.get('category')}")
-                st.code(a.get('line_text',''), language='text')
+                progress.progress(steps[1][0], text=steps[1][1])
+                if parsed["errors_found"] == 0:
+                    st.info("No anomalies detected in this log file.")
+                    progress.empty()
+                    st.stop()
 
-            # Button to run full AI analysis (may be slow)
-            stream_tokens = st.checkbox("Stream LLM tokens live", value=False, help="Show incremental tokens from the LLM during analysis")
+                progress.progress(steps[2][0], text=steps[2][1])
+                for i, (pct, msg) in enumerate(steps[3:], 3):
+                    progress.progress(pct, text=msg)
 
-            if 'token_stream' not in st.session_state:
-                st.session_state['token_stream'] = []
+                report = run_agent_loop(parsed, uploaded.name)
+                incident_id = save_incident(report)
+                report["_incident_id"] = incident_id
+                st.session_state["last_report"] = report
+                progress.empty()
+                st.success(
+                    f"Analysis complete — {report['errors_found']} anomalies "
+                    f"found. Incident saved (ID: {incident_id})"
+                )
+                st.rerun()
+            except Exception as e:
+                progress.empty()
+                st.error(f"Analysis failed: {e}")
+                logger.exception("Analysis error")
 
-            tokens_box = st.empty()
+    report = st.session_state.get("last_report")
+    if report:
+        tab1, tab2, tab3 = st.tabs(
+            ["📊 Dashboard", "🔍 Anomalies", "📄 Report"]
+        )
 
-            def _token_callback(anomaly_idx, token_chunk):
-                # append and update UI safely
-                try:
-                    st.session_state['token_stream'].append(f"Anomaly {anomaly_idx+1}: {token_chunk}")
-                    tokens_box.code('\n'.join(st.session_state['token_stream']), language='text')
-                except Exception:
-                    # ensure UI callback never breaks analysis
-                    pass
+        # ── DASHBOARD TAB ──────────────────────────────────────────────────────
+        with tab1:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Total lines", report["total_lines"])
+            c2.metric("Errors found", report["errors_found"])
+            c3.metric("Max severity", f"{report['max_severity']}/10")
+            c4.metric("Avg severity", report["avg_severity"])
 
-            if st.button("🚀 Run AI Analysis (may take minutes)"):
-                if not st.session_state["ollama_online"] and not os.getenv("HF_API_TOKEN"):
-                    st.error("Cannot run AI analysis while AI is offline. Please start your local AI or provide a cloud API token.")
-                else:
-                    try:
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
+            st.divider()
+            col_a, col_b = st.columns(2)
 
-                        status_text.text("Running Agent Loop for AI Analysis...")
-                        # clear previous token stream
-                        st.session_state['token_stream'] = []
-                        tokens_box.code('', language='text')
+            with col_a:
+                cat = report.get("category_counts", {})
+                if cat:
+                    fig = go.Figure(go.Pie(
+                        labels=list(cat.keys()),
+                        values=list(cat.values()),
+                        hole=0.45,
+                        marker=dict(colors=[
+                            "#E24B4A","#EF9F27","#378ADD",
+                            "#639922","#7F77DD","#888780"
+                        ])
+                    ))
+                    fig.update_layout(
+                        title="Error categories",
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        showlegend=True,
+                        height=320,
+                        margin=dict(t=40,b=20,l=20,r=20),
+                        font=dict(size=12)
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
 
-                        report = run_agent_loop(
-                            parsed_data,
-                            filename,
-                            progress_callback=progress_bar.progress,
-                            status_callback=status_text.text,
-                            token_callback=(_token_callback if stream_tokens else None),
-                            stream=bool(stream_tokens)
+            with col_b:
+                sev = report.get("severity_distribution", {})
+                if sev:
+                    sev_colors = {
+                        "Critical":"#E24B4A","High":"#EF9F27",
+                        "Medium":"#378ADD","Low":"#639922"
+                    }
+                    fig2 = go.Figure(go.Bar(
+                        x=list(sev.keys()),
+                        y=list(sev.values()),
+                        marker_color=[
+                            sev_colors.get(k,"#888780")
+                            for k in sev.keys()
+                        ]
+                    ))
+                    fig2.update_layout(
+                        title="Severity distribution",
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        height=320,
+                        margin=dict(t=40,b=20,l=20,r=20),
+                        yaxis=dict(
+                            gridcolor="rgba(0,0,0,0.05)",
+                            title="Count"
+                        ),
+                        font=dict(size=12)
+                    )
+                    st.plotly_chart(fig2, use_container_width=True)
+
+            st.divider()
+            st.subheader("Executive summary")
+            st.info(report.get("executive_summary", "N/A"))
+
+        # ── ANOMALIES TAB ──────────────────────────────────────────────────────
+        with tab2:
+            analyses = report.get("anomaly_analyses", [])
+            st.caption(
+                f"{len(analyses)} anomalies — sorted by severity desc"
+            )
+            sorted_analyses = sorted(
+                analyses,
+                key=lambda x: x.get("severity_score", 0),
+                reverse=True
+            )
+            for a in sorted_analyses:
+                score = a.get("severity_score", 5)
+                label = a.get("severity_label", "Medium")
+                color = sev_color(score)
+                header = (
+                    f"{sev_badge(score)} &nbsp;|&nbsp; "
+                    f"Line {a.get('line_number')} — "
+                    f"**{a.get('matched_keyword')}** — "
+                    f"{a.get('category')}"
+                )
+                with st.expander(
+                    f"Line {a.get('line_number')} | "
+                    f"{a.get('matched_keyword')} | "
+                    f"{a.get('category')} | "
+                    f"Severity {score}/10"
+                ):
+                    s1, s2 = st.columns([1, 3])
+                    with s1:
+                        st.markdown(
+                            f"<span style='color:{color};font-weight:500;"
+                            f"font-size:22px'>{score}/10</span><br>"
+                            f"<span style='color:{color};font-size:12px'>"
+                            f"{label}</span>",
+                            unsafe_allow_html=True
                         )
-                        progress_bar.progress(100)
+                    with s2:
+                        st.markdown(f"**Root cause:** {a.get('root_cause','N/A')}")
+                        st.markdown(f"**Summary:** {a.get('summary','N/A')}")
 
-                        status_text.text("Saving incident to database...")
-                        incident_id = save_incident(report)
-                        status_text.text("Analysis complete!")
-                        st.session_state['last_report'] = report
-                        # Remove parsed_report now that we have full report
-                        if 'parsed_report' in st.session_state:
-                            del st.session_state['parsed_report']
-                    except Exception as e:
-                        st.error(f"An error occurred during AI analysis: {e}")
+                    st.markdown("**Remediation steps:**")
+                    for j, step in enumerate(
+                        a.get("remediation_steps", []), 1
+                    ):
+                        st.markdown(f"{j}. {step}")
 
-        except Exception as e:
-            st.error(f"Failed to parse uploaded file: {e}")
+                    st.markdown("**Log line:**")
+                    st.code(a.get("line_text", ""), language="text")
 
-    if "last_report" in st.session_state:
-        st.markdown("---")
-        report = st.session_state["last_report"]
-        t1, t2, t3 = st.tabs(["📊 Dashboard", "🔍 Anomalies", "📄 Report"])
-        
-        with t1:
-            render_dashboard(report)
-        with t2:
-            render_anomalies(report)
-        with t3:
-            render_report_tab(report)
+                    ctx_before = a.get("context_before", [])
+                    ctx_after = a.get("context_after", [])
+                    if ctx_before or ctx_after:
+                        with st.expander("View full context (±20 lines)"):
+                            full_ctx = (
+                                ctx_before
+                                + [">>> " + a.get("line_text","")]
+                                + ctx_after
+                            )
+                            st.code(
+                                "\n".join(full_ctx),
+                                language="text"
+                            )
 
-elif nav_selection == "📜 Incident History":
-    st.header("Incident History")
-    
-    try:
-        history = get_incident_history()
-        if not history:
-            st.info("No incidents analyzed yet.")
-        else:
-            search_term = st.text_input("Search by filename")
-            
-            for incident in history:
-                filename = incident["log_filename"]
-                if search_term and search_term.lower() not in filename.lower():
-                    continue
-                    
-                with st.container(border=True):
-                    cols = st.columns([3, 2, 2])
-                    with cols[0]:
-                        st.markdown(f"**{filename}**")
-                        st.caption(incident["analysis_timestamp"])
-                    with cols[1]:
-                        st.write(f"Errors: {incident['errors_found']} | Max Sev: {incident['max_severity']}")
-                    with cols[2]:
-                        c1, c2 = st.columns(2)
-                        if c1.button("View Full Report", key=f"view_{incident['id']}"):
-                            full_report = get_incident_by_id(incident['id'])
-                            if full_report:
-                                st.session_state["last_report"] = full_report
-                                st.success("Loaded into session. Go to 'Analyze Logs' to view.")
-                            else:
-                                st.error("Failed to load full report.")
-                        if c2.button("Delete", key=f"del_{incident['id']}"):
-                            delete_incident(incident['id'])
+        # ── REPORT TAB ─────────────────────────────────────────────────────────
+        with tab3:
+            st.subheader("Download reports")
+            col1, col2 = st.columns(2)
+
+            with col1:
+                if st.button("⬇️ Generate PDF", use_container_width=True):
+                    with st.spinner("Generating PDF..."):
+                        try:
+                            pdf_path = generate_pdf(report)
+                            with open(pdf_path, "rb") as f:
+                                st.download_button(
+                                    "📄 Download PDF",
+                                    f.read(),
+                                    file_name=Path(pdf_path).name,
+                                    mime="application/pdf",
+                                    use_container_width=True
+                                )
+                        except Exception as e:
+                            st.error(f"PDF generation failed: {e}")
+
+            with col2:
+                if st.button("⬇️ Generate CSV", use_container_width=True):
+                    with st.spinner("Generating CSV..."):
+                        try:
+                            csv_path = generate_csv(report)
+                            with open(csv_path, "rb") as f:
+                                st.download_button(
+                                    "📊 Download CSV",
+                                    f.read(),
+                                    file_name=Path(csv_path).name,
+                                    mime="text/csv",
+                                    use_container_width=True
+                                )
+                        except Exception as e:
+                            st.error(f"CSV generation failed: {e}")
+
+            st.divider()
+            st.subheader("Raw report JSON")
+            st.json(report, expanded=False)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: INCIDENT HISTORY
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "📜 Incident History":
+    st.title("Incident history")
+    search = st.text_input(
+        "Search by filename", placeholder="e.g. database_error"
+    )
+    history = get_incident_history()
+    if search:
+        history = [
+            h for h in history
+            if search.lower() in h.get("log_filename","").lower()
+        ]
+    if not history:
+        st.info("No incidents analyzed yet. Upload a log file to begin.")
+    else:
+        st.caption(f"{len(history)} incidents found")
+        for h in history:
+            with st.container(border=True):
+                c1, c2, c3, c4, c5 = st.columns([3,2,1,1,2])
+                c1.markdown(f"**{h['log_filename']}**")
+                c2.caption(h.get("analysis_timestamp","")[:16])
+                c3.metric("Errors", h.get("errors_found",0))
+                c4.metric("Max sev", h.get("max_severity",0))
+                with c5:
+                    b1, b2 = st.columns(2)
+                    if b1.button("View", key=f"view_{h['id']}"):
+                        full = get_incident_by_id(h["id"])
+                        if full:
+                            st.session_state["last_report"] = full
                             st.rerun()
-                            
-    except Exception as e:
-        st.error(f"Failed to load history: {e}")
+                    if b2.button("🗑", key=f"del_{h['id']}"):
+                        delete_incident(h["id"])
+                        st.rerun()
 
-elif nav_selection == "ℹ️ About":
-    st.header("About LogSage AI")
-    st.write("LogSage AI is an intelligent log file analyzer that uses local LLMs to interpret errors, find root causes, and suggest remediations.")
-    
-    st.subheader("Team")
-    st.write("Built by a 4-member team for the Infinite Computer Solutions AI Prototype Challenge.")
-    
-    st.subheader("Tech Stack")
-    st.table({
-        "Component": ["Frontend", "Backend", "AI Model", "Database"],
-        "Technology": ["Streamlit", "Python 3.10", "Ollama (llama3)", "SQLite3"]
-    })
-    
-    st.subheader("Agent Workflow")
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: ABOUT
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "ℹ️ About":
+    st.title("About LogSage AI")
     st.markdown("""
-    1. **Read**: Parse the raw log file.
-    2. **Detect**: Extract anomalies based on keywords.
-    3. **Extract Context**: Capture surrounding log lines.
-    4. **Analyze**: Query LLM for root cause and remediation.
-    5. **Severity**: Calculate impact metrics.
-    6. **Recommendations**: Generate executive summary.
-    7. **Report**: Compile and save final incident data.
+LogSage AI is an AI-powered log file anomaly explainer built for the
+**Infinite Computer Solutions AI Prototype Challenge**.
+
+### Tech stack
+| Component | Technology |
+|-----------|-----------|
+| Frontend | Streamlit |
+| Backend | Python 3.10+ |
+| AI Engine | Ollama + Llama3 |
+| Database | SQLite |
+| Reports | ReportLab + CSV |
+| Charts | Plotly |
+
+### Agent workflow
+The 7-step agent loop automatically:
+1. Reads and validates the uploaded log
+2. Detects anomalies using keyword matching
+3. Extracts ±20 lines of context per error
+4. Analyzes each anomaly using Llama3 via Ollama
+5. Classifies severity on a 1–10 scale
+6. Generates remediation recommendations
+7. Produces a full incident report
+
+### Team
+Built in 1–2 days using only free and open source tools.
     """)
-    
-    st.markdown("[GitHub Repository Placeholder](#)")

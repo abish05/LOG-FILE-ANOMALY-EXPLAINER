@@ -1,1 +1,23 @@
+# Secrets
 .env
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+venv/
+.venv/
+
+# Data & reports (generated at runtime)
+data/
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+*.swp

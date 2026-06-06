@@ -1,1 +1,1 @@
-# Empty init file to mark package
+"""Agent package."""

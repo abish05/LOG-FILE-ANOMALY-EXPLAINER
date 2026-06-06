@@ -1,112 +1,86 @@
-"""
-Log parsing module for LogSage AI.
-Scans log content for error keywords, extracts surrounding context, and classifies errors.
-"""
-
+import re
 import time
 import logging
-from typing import Dict, Any, List
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-ERROR_KEYWORDS = ["ERROR", "EXCEPTION", "FAILED", "TIMEOUT", "CRITICAL", "FATAL", "WARN", "WARNING", "ERR"]
+KEYWORDS = ["CRITICAL", "FATAL", "ERROR", "EXCEPTION", "FAILED", "TIMEOUT"]
+
+# Compile once at module load — never re-compile on each call
+_KEYWORD_PATTERN = re.compile(
+    r'\b(CRITICAL|FATAL|ERROR|EXCEPTION|FAILED|TIMEOUT)\b',
+    re.IGNORECASE
+)
+
+CATEGORY_RULES = [
+    (["sql", "database", "db", "postgres", "mysql", "mongo",
+      "connection refused", "5432", "3306", "ora-"], "Database Error"),
+    (["auth", "login", "password", "token", "jwt", "oauth",
+      "401", "403", "unauthorized", "forbidden", "credential"], "Authentication Error"),
+    (["timeout", "connection", "network", "dns", "socket",
+      "502", "503", "504", "unreachable", "refused", "gateway"], "Network Error"),
+    (["memory", "heap", "oom", "out of memory", "gc overhead",
+      "outofmemory", "malloc", "segfault", "stack overflow"], "Memory Error"),
+    (["api", "endpoint", "request", "response", "http", "rest",
+      "graphql", "webhook", "404", "500", "rate limit"], "API Error"),
+]
+
 
 def classify_error(line_text: str, context: List[str]) -> str:
-    """
-    Classifies a given log error line into a known category based on keywords.
-
-    Args:
-        line_text (str): The specific line containing the error.
-        context (list[str]): The lines surrounding the error for additional context.
-
-    Returns:
-        str: The determined category string.
-    """
-    # Combine line and context to increase the chance of finding a matching keyword
-    full_text = ("\n".join(context) + "\n" + line_text).lower()
-    
-    # 1. Database Error
-    if any(kw in full_text for kw in ["sql", "database", "db", "connection refused", "5432", "3306"]):
-        return "Database Error"
-        
-    # 2. Authentication Error
-    if any(kw in full_text for kw in ["auth", "login", "password", "token", "401", "403", "unauthorized"]):
-        return "Authentication Error"
-        
-    # 3. Network Error
-    if any(kw in full_text for kw in ["timeout", "connection", "network", "dns", "socket", "502", "503"]):
-        return "Network Error"
-        
-    # 4. Memory Error
-    if any(kw in full_text for kw in ["memory", "heap", "oom", "out of memory", "gc overhead"]):
-        return "Memory Error"
-        
-    # 5. API Error
-    if any(kw in full_text for kw in ["api", "endpoint", "request", "response", "http", "404", "500"]):
-        return "API Error"
-        
-    # 6. Fallback
+    """Classify error into one of 6 categories using keyword rules."""
+    combined = (line_text + " ".join(context)).lower()
+    for keywords, category in CATEGORY_RULES:
+        if any(kw in combined for kw in keywords):
+            return category
     return "Unknown Error"
+
 
 def parse_log_file(file_content: str) -> Dict[str, Any]:
     """
-    Parses raw log file content to identify anomalies, context, and categories.
-
-    Args:
-        file_content (str): The full content of the log file.
+    Parse log file content and extract anomalies.
 
     Returns:
-        dict: A dictionary containing parsing results and metrics.
+        dict with keys: total_lines, errors_found, anomalies,
+        category_counts, parse_duration_ms
     """
-    start_time = time.time()
-    
+    start = time.perf_counter()  # perf_counter is more precise than time.time()
     lines = file_content.splitlines()
     total_lines = len(lines)
-    anomalies = []
-    category_counts = {}
-    
+    anomalies: List[Dict[str, Any]] = []
+
     for i, line in enumerate(lines):
-        line_upper = line.upper()
-        
-        # Check if line contains any of the target error keywords
-        matched_keyword = None
-        for kw in ERROR_KEYWORDS:
-            if kw in line_upper:
-                matched_keyword = kw
-                break
-                
-        if matched_keyword:
-            # Extract context (up to 20 lines before and after)
-            start_idx = max(0, i - 20)
-            end_idx = min(total_lines, i + 21) # +21 because we want 20 lines AFTER the current line
-            
-            context_before = lines[start_idx:i]
-            context_after = lines[i+1:end_idx]
-            
+        match = _KEYWORD_PATTERN.search(line)
+        if match:
+            keyword = match.group(1).upper()
+            before_start = max(0, i - 20)
+            after_end = min(total_lines, i + 21)
+            context_before = lines[before_start:i]
+            context_after = lines[i + 1:after_end]
             category = classify_error(line, context_before + context_after)
-            
-            # Update category counts
-            category_counts[category] = category_counts.get(category, 0) + 1
-            
-            anomaly = {
-                "line_number": i + 1, # 1-indexed line number
-                "matched_keyword": matched_keyword,
-                "line_text": line,
+            anomalies.append({
+                "line_number": i + 1,
+                "matched_keyword": keyword,
+                "line_text": line.strip(),
                 "context_before": context_before,
                 "context_after": context_after,
-                "category": category
-            }
-            anomalies.append(anomaly)
-            
-    end_time = time.time()
-    parse_duration_ms = (end_time - start_time) * 1000.0
-    
-    logger.info(f"Parsed {total_lines} lines, found {len(anomalies)} errors in {parse_duration_ms:.2f}ms")
-    
+                "category": category,
+            })
+
+    category_counts: Dict[str, int] = {}
+    for a in anomalies:
+        cat = a["category"]
+        category_counts[cat] = category_counts.get(cat, 0) + 1
+
+    duration_ms = round((time.perf_counter() - start) * 1000, 2)
+    logger.info(
+        f"Parsed {total_lines} lines, found {len(anomalies)} anomalies "
+        f"in {duration_ms}ms"
+    )
     return {
         "total_lines": total_lines,
         "errors_found": len(anomalies),
         "anomalies": anomalies,
         "category_counts": category_counts,
-        "parse_duration_ms": parse_duration_ms
+        "parse_duration_ms": duration_ms,
     }

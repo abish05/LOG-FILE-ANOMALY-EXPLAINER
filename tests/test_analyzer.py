@@ -88,7 +88,7 @@ def test_fallback_on_invalid_json_from_llm(mock_call_ollama, sample_parsed_data)
     # First anomaly should use fallback
     anomaly1 = report["anomaly_analyses"][0]
     assert anomaly1["severity_score"] == 5
-    assert anomaly1["category"] == "Unknown Error"
+    assert anomaly1["category"] == "Database Error"
     assert "AI parse error" in anomaly1["root_cause"]
 
 def test_agent_loop_raises_on_missing_anomalies_key():

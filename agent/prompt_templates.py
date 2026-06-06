@@ -1,84 +1,92 @@
-"""
-Prompt templates for LogSage AI.
-Defines instructions for the Ollama LLM to analyze anomalies and generate summaries.
-"""
-
+import json
 from typing import List, Dict, Any
 
 SEVERITY_LABELS = {
-    range(1, 4): "Low",
-    range(4, 7): "Medium",
-    range(7, 9): "High",
-    range(9, 11): "Critical"
+    (1, 3): "Low",
+    (4, 6): "Medium",
+    (7, 8): "High",
+    (9, 10): "Critical",
 }
 
-def build_analysis_prompt(anomaly: Dict[str, Any], log_filename: str) -> str:
-    """
-    Returns a prompt that instructs the LLM to:
-    - Read the error context (inject context_before + line + context_after)
-    - Identify root cause
-    - Determine category from the 6 defined categories
-    - Assign severity 1-10 with justification
-    - List 3-5 concrete remediation steps
-    - Output ONLY valid JSON
-    """
-    context_lines = []
-    if "context_before" in anomaly:
-        context_lines.extend(anomaly["context_before"])
-    context_lines.append(f">>> {anomaly.get('line_text', '')} <<<")
-    if "context_after" in anomaly:
-        context_lines.extend(anomaly["context_after"])
-        
-    context_block = "\n".join(context_lines)
-    
-    return f"""You are an expert DevOps and Site Reliability Engineer analyzing log files.
-Analyze the following error anomaly from the log file: {log_filename}
+def get_severity_label(score: int) -> str:
+    """Map numeric score to severity label."""
+    for (low, high), label in SEVERITY_LABELS.items():
+        if low <= score <= high:
+            return label
+    return "Medium"
 
---- LOG CONTEXT ---
-{context_block}
--------------------
+def build_analysis_prompt(anomaly: Dict[str, Any],
+                          log_filename: str) -> str:
+    """Build per-anomaly analysis prompt for the LLM."""
+    context_before = "\n".join(anomaly.get("context_before", []))
+    context_after = "\n".join(anomaly.get("context_after", []))
+    error_line = anomaly.get("line_text", "")
+    keyword = anomaly.get("matched_keyword", "ERROR")
+    category = anomaly.get("category", "Unknown Error")
 
-Based on the context above, provide a detailed analysis.
-You MUST output ONLY valid JSON format. Do not include any markdown formatting, backticks, or other text outside the JSON object.
+    return f"""You are an expert Site Reliability Engineer analyzing production logs.
 
-The JSON object must have exactly these keys:
-- "root_cause": A clear, concise explanation of the root cause (string).
-- "category": Choose exactly one of ["Database Error", "Authentication Error", "Network Error", "Memory Error", "API Error", "Unknown Error"] (string).
-- "severity_score": An integer between 1 and 10, where 10 is the most critical service outage (int).
-- "severity_label": Based on the score, use "Low" (1-3), "Medium" (4-6), "High" (7-8), or "Critical" (9-10) (string).
-- "remediation_steps": A list of 3-5 concrete, actionable steps to fix the issue (list of strings).
-- "summary": A 2-3 sentence executive summary of the anomaly (string).
+Log file: {log_filename}
+Detected keyword: {keyword}
+Pre-classified category: {category}
 
-Output pure JSON:
-"""
+=== CONTEXT BEFORE ERROR ===
+{context_before}
 
-def build_incident_summary_prompt(all_analyses: List[Dict[str, Any]], log_filename: str) -> str:
-    """
-    Returns a prompt that instructs the LLM to produce an executive
-    incident summary covering: what happened, business impact, immediate
-    actions, preventive measures. Output plain text, max 200 words.
-    """
-    analyses_text = ""
-    for idx, analysis in enumerate(all_analyses, 1):
-        analyses_text += f"Anomaly {idx}:\n"
-        analyses_text += f"- Category: {analysis.get('category', 'Unknown')}\n"
-        analyses_text += f"- Severity: {analysis.get('severity_score', 0)}/10\n"
-        analyses_text += f"- Root Cause: {analysis.get('root_cause', 'N/A')}\n"
-        analyses_text += f"- Summary: {analysis.get('summary', 'N/A')}\n\n"
-        
-    return f"""You are a Senior Engineering Manager reporting on a recent production incident.
-Based on the following parsed anomalies from {log_filename}, provide a brief executive incident summary.
+=== ERROR LINE ===
+{error_line}
 
---- ANOMALIES ---
-{analyses_text}
------------------
+=== CONTEXT AFTER ERROR ===
+{context_after}
 
-Write a plain text executive summary covering:
-1. What happened (the overall incident)
-2. Potential business impact
+Analyze this log error and respond with ONLY a valid JSON object.
+No markdown, no code fences, no explanation — pure JSON only.
+
+Required JSON structure:
+{{
+  "root_cause": "One clear sentence explaining the root cause",
+  "category": "One of: Database Error, Authentication Error, Network Error, Memory Error, API Error, Unknown Error",
+  "severity_score": <integer 1-10>,
+  "severity_label": "One of: Low, Medium, High, Critical",
+  "remediation_steps": [
+    "Step 1: specific actionable fix",
+    "Step 2: specific actionable fix",
+    "Step 3: specific actionable fix"
+  ],
+  "summary": "2-3 sentence incident summary for an on-call engineer"
+}}
+
+Severity scoring guide:
+1-3 = Low (warnings, minor issues, no user impact)
+4-6 = Medium (degraded performance, partial failures)
+7-8 = High (service disruption, data at risk)
+9-10 = Critical (complete outage, data loss, security breach)
+
+Respond with ONLY the JSON object. Nothing else."""
+
+def build_incident_summary_prompt(all_analyses: List[Dict[str, Any]],
+                                  log_filename: str) -> str:
+    """Build executive summary prompt for the full incident."""
+    error_count = len(all_analyses)
+    max_sev = max((a.get("severity_score", 0) for a in all_analyses),
+                  default=0)
+    categories = list({a.get("category", "") for a in all_analyses})
+    root_causes = [a.get("root_cause", "") for a in all_analyses[:5]]
+
+    return f"""You are a senior SRE writing an executive incident summary.
+
+Log file: {log_filename}
+Total anomalies detected: {error_count}
+Highest severity: {max_sev}/10
+Error categories involved: {', '.join(categories)}
+Key root causes identified:
+{json.dumps(root_causes, indent=2)}
+
+Write a concise executive incident summary (maximum 150 words) covering:
+1. What happened (the main failure)
+2. Estimated business impact
 3. Immediate actions taken or required
-4. Preventive measures for the future
+4. Top 2 preventive measures
 
-Keep it concise, professional, and to the point. Maximum 200 words.
-Do not use markdown formatting.
-"""
+Write in plain text. No JSON, no bullet points, no headers.
+Professional engineering tone. Maximum 150 words."""

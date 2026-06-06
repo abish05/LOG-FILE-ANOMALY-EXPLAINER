@@ -4,7 +4,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 import pytest
 import sqlite3
-import json
 from database.db import init_db, save_incident, get_incident_history, get_incident_by_id, delete_incident
 
 @pytest.fixture
@@ -59,13 +58,18 @@ def test_save_and_retrieve_incident(temp_db, sample_report):
     assert len(retrieved["anomaly_analyses"]) == 1
 
 def test_get_history_returns_list(temp_db, sample_report):
-    save_incident(sample_report, temp_db)
+    id1 = save_incident(sample_report, temp_db)
     sample_report["log_filename"] = "test2.log"
-    save_incident(sample_report, temp_db)
+    id2 = save_incident(sample_report, temp_db)
+    
+    # Update created_at for id1 to be in the past to ensure deterministic DESC ordering by created_at
+    with sqlite3.connect(temp_db) as conn:
+        conn.execute("UPDATE incidents SET created_at = '2020-01-01 00:00:00' WHERE id = ?", (id1,))
+        conn.commit()
     
     history = get_incident_history(temp_db)
     assert len(history) == 2
-    # Ensure ordered DESC
+    # Ensure ordered DESC by created_at
     assert history[0]["log_filename"] == "test2.log"
     assert history[1]["log_filename"] == "test.log"
 

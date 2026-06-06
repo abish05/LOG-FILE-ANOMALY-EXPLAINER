@@ -6,10 +6,10 @@ CREATE TABLE IF NOT EXISTS incidents (
     errors_found INTEGER,
     max_severity INTEGER,
     avg_severity REAL,
-    category_counts TEXT,         -- JSON string
-    severity_distribution TEXT,   -- JSON string
+    category_counts TEXT,
+    severity_distribution TEXT,
     executive_summary TEXT,
-    full_report TEXT,             -- complete JSON blob
+    full_report TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS anomalies (
     severity_score INTEGER,
     severity_label TEXT,
     root_cause TEXT,
-    remediation_steps TEXT,       -- JSON string
+    remediation_steps TEXT,
     summary TEXT,
-    FOREIGN KEY (incident_id) REFERENCES incidents(id)
+    FOREIGN KEY (incident_id) REFERENCES incidents(id) ON DELETE CASCADE
 );
