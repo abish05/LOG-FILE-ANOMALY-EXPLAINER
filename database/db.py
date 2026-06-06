@@ -41,7 +41,7 @@ def save_incident(report: dict, db_path: str = DEFAULT_DB_PATH) -> int:
             report.get("executive_summary", ""),
             json.dumps(report)
         ))
-        incident_id = cursor.lastrowid
+        incident_id = cursor.lastrowid or 0  # lastrowid is int|None; always set after INSERT
         for anomaly in report.get("anomaly_analyses", []):
             cursor.execute("""
                 INSERT INTO anomalies

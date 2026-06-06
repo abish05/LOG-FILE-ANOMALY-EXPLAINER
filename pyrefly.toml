@@ -1,0 +1,13 @@
+# pyrefly.toml — Pyrefly type-checker configuration
+# Tells Pyrefly to use the local venv so third-party packages
+# (streamlit, plotly, dotenv, etc.) are found correctly.
+
+python_interpreter = "./venv/bin/python"
+
+# Treat missing stubs as warnings, not errors
+ignore_missing_source = true
+
+# Don't error on imports that exist in the venv but have no type stubs
+[errors]
+missing-import = false
+import-cycle = false

@@ -6,6 +6,7 @@ from pathlib import Path
 import streamlit as st
 # pyrefly: ignore [missing-import]
 import plotly.graph_objects as go
+# pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -82,7 +83,7 @@ with st.sidebar:
     model = st.selectbox(
         "Model", ["llama3", "llama3:8b", "mistral"], index=0
     )
-    os.environ["MODEL_NAME"] = model
+    os.environ["MODEL_NAME"] = model or "llama3"  # guard: selectbox returns str | None
 
 # ── severity helpers ───────────────────────────────────────────────────────────
 def sev_badge(score: int) -> str:
