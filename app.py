@@ -257,41 +257,93 @@ if nav_selection == "🏠 Analyze Logs":
     uploaded_file = st.file_uploader("Upload a log file", type=["log", "txt"])
     
     if uploaded_file is not None:
-        if st.button("🚀 Run Analysis"):
-            if not st.session_state["ollama_online"] and not os.getenv("HF_API_TOKEN"):
-                st.error("Cannot run analysis while AI is offline. Please start your local AI or provide a cloud API token.")
-            else:
-                try:
-                    file_content = uploaded_file.getvalue().decode("utf-8")
-                    filename = uploaded_file.name
-                    
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    
-                    # Agent Steps 1-2
-                    status_text.text("Parsing log file...")
-                    parsed_data = parse_log_file(file_content)
-                    progress_bar.progress(20)
-                    
-                    # Agent Steps 3-7
-                    status_text.text("Running Agent Loop for AI Analysis...")
-                    report = run_agent_loop(
-                        parsed_data, 
-                        filename,
-                        progress_callback=progress_bar.progress,
-                        status_callback=status_text.text
-                    )
-                    progress_bar.progress(80)
-                    
-                    status_text.text("Saving incident to database...")
-                    incident_id = save_incident(report)
-                    progress_bar.progress(100)
-                    status_text.text("Analysis complete!")
-                    
-                    st.session_state["last_report"] = report
-                    
-                except Exception as e:
-                    st.error(f"An error occurred during analysis: {e}")
+        # Immediately parse uploaded file and show quick findings
+        try:
+            file_content = uploaded_file.getvalue().decode("utf-8")
+            filename = uploaded_file.name
+            # Parse on upload for instant feedback
+            parsed_data = parse_log_file(file_content)
+            st.success(f"Parsed {parsed_data.get('total_lines',0)} lines — found {parsed_data.get('errors_found',0)} potential errors")
+
+            # Build a minimal report for parsed-only results (allows CSV download)
+            def build_minimal_report(parsed, log_filename):
+                minimal_anomalies = []
+                for a in parsed.get('anomalies', []):
+                    minimal_anomalies.append({
+                        'line_number': a.get('line_number'),
+                        'matched_keyword': a.get('matched_keyword'),
+                        'line_text': a.get('line_text'),
+                        'context_before': a.get('context_before', []),
+                        'context_after': a.get('context_after', []),
+                        'category': a.get('category', 'Unknown Error'),
+                        'severity_score': 5,
+                        'severity_label': 'Medium',
+                        'root_cause': 'Pending AI analysis',
+                        'remediation_steps': [],
+                        'summary': ''
+                    })
+
+                return {
+                    'log_filename': log_filename,
+                    'analysis_timestamp': datetime.now().isoformat(),
+                    'total_lines': parsed.get('total_lines', 0),
+                    'errors_found': parsed.get('errors_found', 0),
+                    'category_counts': parsed.get('category_counts', {}),
+                    'severity_distribution': {'Low':0,'Medium':len(minimal_anomalies),'High':0,'Critical':0},
+                    'max_severity': 5,
+                    'avg_severity': 5.0,
+                    'anomaly_analyses': minimal_anomalies,
+                    'executive_summary': 'Parsed-only report. Run AI Analysis for root cause and remediation.'
+                }
+
+            parsed_report = build_minimal_report(parsed_data, filename)
+            st.session_state['parsed_report'] = parsed_report
+
+            # Offer immediate download of parsed CSV
+            try:
+                import io
+                csv_path = generate_csv(parsed_report, "/tmp/parsed_anomalies.csv")
+                with open(csv_path, 'rb') as f:
+                    st.download_button("⬇️ Download Parsed CSV", data=f, file_name="parsed_anomalies.csv", mime="text/csv")
+            except Exception:
+                st.warning("Parsed CSV download unavailable.")
+
+            # Show quick anomalies summary (error line and category)
+            st.markdown("### Quick Findings")
+            for a in parsed_report.get('anomaly_analyses', []):
+                st.markdown(f"**Line {a.get('line_number')} — {a.get('matched_keyword')}** — {a.get('category')}")
+                st.code(a.get('line_text',''), language='text')
+
+            # Button to run full AI analysis (may be slow)
+            if st.button("🚀 Run AI Analysis (may take minutes)"):
+                if not st.session_state["ollama_online"] and not os.getenv("HF_API_TOKEN"):
+                    st.error("Cannot run AI analysis while AI is offline. Please start your local AI or provide a cloud API token.")
+                else:
+                    try:
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+
+                        status_text.text("Running Agent Loop for AI Analysis...")
+                        report = run_agent_loop(
+                            parsed_data,
+                            filename,
+                            progress_callback=progress_bar.progress,
+                            status_callback=status_text.text
+                        )
+                        progress_bar.progress(100)
+
+                        status_text.text("Saving incident to database...")
+                        incident_id = save_incident(report)
+                        status_text.text("Analysis complete!")
+                        st.session_state['last_report'] = report
+                        # Remove parsed_report now that we have full report
+                        if 'parsed_report' in st.session_state:
+                            del st.session_state['parsed_report']
+                    except Exception as e:
+                        st.error(f"An error occurred during AI analysis: {e}")
+
+        except Exception as e:
+            st.error(f"Failed to parse uploaded file: {e}")
 
     if "last_report" in st.session_state:
         st.markdown("---")
