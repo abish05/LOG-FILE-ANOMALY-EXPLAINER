@@ -88,43 +88,38 @@ def call_ollama(prompt: str, model: str = None) -> str:
 
     return "AI analysis unavailable. Please ensure Ollama is running locally or set `HF_API_TOKEN` for hosted inference."
 
-def call_ollama_stream(prompt: str,
-                       model: str = MODEL_NAME):
+def call_ollama_stream(prompt: str, model: str = None):
     """
     Generator that yields token chunks from Ollama streaming API.
     Never raises; yields at least one fallback string on failure.
-    """
-    try:
-        payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": True,
-        }
-        with requests.post(
-            f"{OLLAMA_HOST}/api/generate",
-            json=payload,
-            timeout=TIMEOUT,
-            stream=True,
-        ) as response:
-            try:
-                response.raise_for_status()
-            except Exception:
-                yield (
-                    "AI stream unavailable: non-200 response from Ollama"
-                )
-                return
 
-            # Stream lines/chunks as they arrive
-            for raw in response.iter_lines(decode_unicode=True):
-                if raw:
-                    # yield decoded chunk
-                    yield raw
+    This function reads configuration from environment variables when
+    explicit parameters are not provided so it is safe to call in
+    deployed environments where module-level constants may not exist.
+    """
+    host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+    model_name = model or os.getenv("MODEL_NAME", "llama3")
+    timeout = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+    url = f"{host}/api/generate"
+    headers = {"Bypass-Tunnel-Reminder": "true"}
+
+    try:
+        payload = {"model": model_name, "prompt": prompt, "stream": True}
+        resp = requests.post(url, json=payload, headers=headers, timeout=timeout, stream=True)
+        try:
+            resp.raise_for_status()
+        except Exception:
+            yield "AI stream unavailable: non-200 response from Ollama"
             return
+
+        # Stream lines/chunks as they arrive
+        for raw in resp.iter_lines(decode_unicode=True):
+            if raw:
+                yield raw
+        return
     except Exception as e:
         logger.error(f"call_ollama_stream error: {e}")
-        yield (
-            "AI analysis streaming unavailable. Ensure Ollama is running and model is pulled."
-        )
+        yield "AI analysis streaming unavailable. Ensure Ollama is running and model is pulled."
         return
 
 def call_huggingface_inference(prompt: str, model: str, token: str) -> str:
