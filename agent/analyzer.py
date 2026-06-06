@@ -5,7 +5,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
-from agent.ollama_client import call_ollama, is_ollama_available
+from agent.llm_client import call_llm, is_groq_available
+from agent.ollama_client import is_ollama_available
 from agent.prompt_templates import (
     build_analysis_prompt,
     build_incident_summary_prompt,
@@ -18,10 +19,10 @@ logger = logging.getLogger(__name__)
 _JSON_RE = re.compile(r'\{[\s\S]+\}', re.MULTILINE)
 _FENCE_RE = re.compile(r'```(?:json)?\s*([\s\S]+?)\s*```', re.IGNORECASE)
 
-# Parallel LLM workers — keeps Ollama responsive without flooding it
+# Parallel LLM workers
 _MAX_WORKERS = 4
 
-# ── Rule-based fallback analysis (used when Ollama is offline) ─────────────────
+# ── Rule-based fallback analysis ───────────────────────────────────────────────
 _RULE_BASED: Dict[str, Dict[str, Any]] = {
     "Database Error": {
         "root_cause": "Database connection or query failure detected in the application log.",
@@ -105,24 +106,16 @@ _RULE_BASED: Dict[str, Dict[str, Any]] = {
 
 
 def _rule_based_analysis(anomaly: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Generate a meaningful analysis dict from keyword/category rules alone.
-    Used when Ollama is offline — produces readable results instead of
-    generic 'AI unavailable' placeholders.
-    """
+    """Generate meaningful analysis from rules when no LLM is available."""
     category = anomaly.get("category", "Unknown Error")
     template = _RULE_BASED.get(category, _RULE_BASED["Unknown Error"]).copy()
-
     keyword = anomaly.get("matched_keyword", "ERROR")
     line_text = anomaly.get("line_text", "")
-
-    # Slightly personalise the root_cause with the actual keyword & snippet
     snippet = line_text[:120].strip() if line_text else ""
     template["root_cause"] = (
         f"[{keyword}] {template['root_cause']}"
         + (f" Detected in: \"{snippet}\"" if snippet else "")
     )
-
     score = template["severity_score"]
     return {
         "root_cause": template["root_cause"],
@@ -135,36 +128,25 @@ def _rule_based_analysis(anomaly: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _extract_json(raw: str) -> dict:
-    """
-    Robustly extract a JSON object from an LLM response.
-    Handles: plain JSON, ```json fences, JSON embedded in prose.
-    """
+    """Robustly extract JSON from LLM response (handles fences, prose, plain JSON)."""
     stripped = raw.strip()
-
-    # Fast-path: already clean JSON
     if stripped.startswith("{"):
         try:
             return json.loads(stripped)
         except json.JSONDecodeError:
             pass
-
-    # Strip markdown code fences and try the inner content
     fence_match = _FENCE_RE.search(stripped)
     if fence_match:
-        inner = fence_match.group(1).strip()
         try:
-            return json.loads(inner)
+            return json.loads(fence_match.group(1).strip())
         except json.JSONDecodeError:
             pass
-
-    # Try to grab the first {...} block anywhere in the response
     block_match = _JSON_RE.search(stripped)
     if block_match:
         try:
             return json.loads(block_match.group())
         except json.JSONDecodeError:
             pass
-
     raise ValueError(f"No valid JSON found in LLM response: {stripped[:200]}")
 
 
@@ -175,36 +157,30 @@ def _analyze_single(
     total: int,
     offline: bool,
 ) -> Dict[str, Any]:
-    """Analyze one anomaly — uses LLM if online, rule-based if offline."""
+    """Analyze one anomaly — LLM (Groq/Ollama) or rule-based fallback."""
     logger.info(
         f"  Analyzing anomaly {index + 1}/{total} "
         f"(line {anomaly.get('line_number')}) "
-        f"[{'offline' if offline else 'LLM'}]"
+        f"[{'offline/rule-based' if offline else 'LLM'}]"
     )
 
     if offline:
         analysis = _rule_based_analysis(anomaly)
     else:
         prompt = build_analysis_prompt(anomaly, log_filename)
-        raw_response = call_ollama(prompt)
+        raw_response = call_llm(prompt)
         try:
             analysis = _extract_json(raw_response)
         except (json.JSONDecodeError, ValueError) as e:
-            logger.warning(
-                f"JSON parse failed for anomaly {index + 1}: {e}. "
-                "Falling back to rule-based."
-            )
+            logger.warning(f"JSON parse failed for anomaly {index + 1}: {e}. Falling back to rule-based.")
             analysis = _rule_based_analysis(anomaly)
 
-    # Normalise and annotate with source fields
     analysis["line_number"] = anomaly.get("line_number")
     analysis["matched_keyword"] = anomaly.get("matched_keyword")
     analysis["line_text"] = anomaly.get("line_text")
     analysis["context_before"] = anomaly.get("context_before", [])
     analysis["context_after"] = anomaly.get("context_after", [])
-    analysis["severity_score"] = max(
-        1, min(10, int(analysis.get("severity_score", 5)))
-    )
+    analysis["severity_score"] = max(1, min(10, int(analysis.get("severity_score", 5))))
     analysis["severity_label"] = get_severity_label(analysis["severity_score"])
     return analysis
 
@@ -216,14 +192,7 @@ def run_agent_loop(
 ) -> Dict[str, Any]:
     """
     Execute the 7-step LogSage AI agent loop.
-
-    Args:
-        parsed_data:  Output of parse_log_file()
-        log_filename: Original filename for display purposes
-        progress_cb:  Optional callable(percent: int, message: str) for UI updates
-
-    Returns:
-        Complete incident report dict
+    Uses Groq Cloud → Ollama → Rule-based in that priority order.
     """
     def _progress(pct: int, msg: str) -> None:
         logger.info(f"[{pct}%] {msg}")
@@ -234,10 +203,7 @@ def run_agent_loop(
     logger.info("=== Agent Loop START ===")
 
     if "anomalies" not in parsed_data:
-        raise ValueError(
-            "parsed_data missing 'anomalies' key. "
-            "Ensure parse_log_file() ran successfully."
-        )
+        raise ValueError("parsed_data missing 'anomalies' key.")
 
     _progress(15, "Step 2 — Extracting anomalies...")
     anomalies: List[Dict[str, Any]] = parsed_data["anomalies"]
@@ -254,21 +220,28 @@ def run_agent_loop(
         )
         anomaly["full_context"] = "\n".join(lines)
 
-    # Check Ollama once for the whole run
-    offline = not is_ollama_available()
-    mode_label = "rule-based (Ollama offline)" if offline else f"LLM (workers={_MAX_WORKERS})"
-    _progress(
-        35,
-        f"Step 4 — Analyzing {len(anomalies)} anomalies via {mode_label}..."
-    )
+    # Determine AI mode — Groq takes priority over Ollama
+    groq_on = is_groq_available()
+    ollama_on = is_ollama_available()
+    offline = not (groq_on or ollama_on)
+
+    if groq_on:
+        mode_label = "Groq Cloud API · llama-3.1-8b-instant"
+        analysis_mode = "groq"
+    elif ollama_on:
+        mode_label = "Ollama (local LLM)"
+        analysis_mode = "ollama"
+    else:
+        mode_label = "rule-based (no LLM configured)"
+        analysis_mode = "rule-based"
+
+    _progress(35, f"Step 4 — Analyzing {len(anomalies)} anomalies via {mode_label}...")
 
     anomaly_analyses: List[Optional[Dict[str, Any]]] = [None] * len(anomalies)
 
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
         futures = {
-            pool.submit(
-                _analyze_single, i, anomaly, log_filename, len(anomalies), offline
-            ): i
+            pool.submit(_analyze_single, i, anomaly, log_filename, len(anomalies), offline): i
             for i, anomaly in enumerate(anomalies)
         }
         done_count = 0
@@ -288,13 +261,11 @@ def run_agent_loop(
                     "context_after": anomaly.get("context_after", []),
                 }
             done_count += 1
-            pct = 35 + int(done_count / max(len(anomalies), 1) * 35)  # 35→70
+            pct = 35 + int(done_count / max(len(anomalies), 1) * 35)
             _progress(pct, f"Step 4 — Analyzed {done_count}/{len(anomalies)} anomalies...")
 
     _progress(75, "Step 5 — Computing severity distribution...")
-    severity_dist: Dict[str, int] = {
-        "Critical": 0, "High": 0, "Medium": 0, "Low": 0
-    }
+    severity_dist: Dict[str, int] = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
     scores = [a.get("severity_score", 5) for a in anomaly_analyses if a]
     for a in anomaly_analyses:
         if a:
@@ -306,19 +277,18 @@ def run_agent_loop(
 
     _progress(85, "Step 6 — Generating executive summary...")
     if offline:
-        top_cats = list(
-            {a.get("category", "Unknown") for a in anomaly_analyses if a}
-        )
+        top_cats = list({a.get("category", "Unknown") for a in anomaly_analyses if a})
         executive_summary = (
-            f"Rule-based incident summary: {len(anomaly_analyses)} anomalies were detected "
+            f"Rule-based incident summary: {len(anomaly_analyses)} anomalies detected "
             f"in '{log_filename}'. "
-            f"Error categories found: {', '.join(top_cats) if top_cats else 'Unknown'}. "
-            f"Maximum severity: {max_severity}/10. "
-            f"Start Ollama locally ('ollama serve && ollama pull llama3') for full AI analysis."
+            f"Error categories: {', '.join(top_cats) if top_cats else 'Unknown'}. "
+            f"Max severity: {max_severity}/10. "
+            f"Set GROQ_API_KEY in Render environment for full AI-powered analysis."
         )
     else:
-        summary_prompt = build_incident_summary_prompt(anomaly_analyses, log_filename)
-        executive_summary = call_ollama(summary_prompt)
+        valid_analyses = [a for a in anomaly_analyses if a is not None]
+        summary_prompt = build_incident_summary_prompt(valid_analyses, log_filename)
+        executive_summary = call_llm(summary_prompt)
         if executive_summary.strip().startswith("{"):
             executive_summary = "See individual anomaly analyses for details."
 
@@ -335,7 +305,7 @@ def run_agent_loop(
         "anomaly_analyses": anomaly_analyses,
         "executive_summary": executive_summary,
         "agent_steps_completed": 7,
-        "analysis_mode": "rule-based" if offline else "llm",
+        "analysis_mode": analysis_mode,
     }
     _progress(100, "Analysis complete!")
     logger.info("=== Agent Loop COMPLETE ===")

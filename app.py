@@ -3,11 +3,9 @@ import logging
 from pathlib import Path
 
 # pyrefly: ignore [missing-import]
-import streamlit as st
-# pyrefly: ignore [missing-import]
-import plotly.graph_objects as go
-# pyrefly: ignore [missing-import]
-from dotenv import load_dotenv
+import streamlit as st  # pyrefly: ignore [missing-import]
+import plotly.graph_objects as go  # pyrefly: ignore [missing-import]
+from dotenv import load_dotenv  # pyrefly: ignore [missing-import]
 
 load_dotenv()
 
@@ -22,6 +20,7 @@ from database.db import init_db, save_incident, get_incident_history, \
 from parser.log_parser import parse_log_file
 from agent.analyzer import run_agent_loop
 from agent.ollama_client import is_ollama_available
+from agent.llm_client import get_ai_status
 from reports.report_generator import generate_pdf, generate_csv
 
 st.set_page_config(
@@ -70,14 +69,18 @@ with st.sidebar:
         label_visibility="collapsed"
     )
     st.divider()
-    ollama_ok = st.session_state["ollama_status"]
-    if ollama_ok:
-        st.success("🟢 Ollama online")
+    # ── AI status ──────────────────────────────────────────────────────────────
+    ai = get_ai_status()
+    if ai["provider"] == "Groq":
+        st.success(f"🟢 Groq AI online")
+        st.caption(f"Model: `{ai['model']}`")
+    elif ai["provider"] == "Ollama":
+        st.success(f"🟢 Ollama online")
+        st.caption(f"Model: `{ai['model']}`")
     else:
-        st.error("🔴 Ollama offline")
-        st.caption("Run: `ollama serve`\nThen: `ollama pull llama3`")
+        st.info("🔵 Rule-based mode")
+        st.caption("Set `GROQ_API_KEY` for AI analysis")
     if st.button("↻ Refresh status", use_container_width=True):
-        st.session_state["ollama_status"] = is_ollama_available()
         st.rerun()
     st.divider()
     model = st.selectbox(
@@ -154,8 +157,13 @@ if page == "🏠 Analyze Logs":
                 progress.progress(100, text="Done!")
                 progress.empty()
 
-                mode = report.get("analysis_mode", "llm")
-                mode_label = "rule-based (Ollama offline)" if mode == "rule-based" else "AI (Ollama LLM)"
+                mode = report.get("analysis_mode", "rule-based")
+                if mode == "groq":
+                    mode_label = "Groq AI (llama-3.1-8b-instant)"
+                elif mode == "ollama":
+                    mode_label = "Ollama (local LLM)"
+                else:
+                    mode_label = "rule-based analysis"
                 st.success(
                     f"✅ Analysis complete — **{report['errors_found']} anomalies** found "
                     f"via {mode_label}. Incident saved (ID: {incident_id})"
@@ -169,12 +177,14 @@ if page == "🏠 Analyze Logs":
     report = st.session_state.get("last_report")
     if report:
         # Show analysis mode badge
-        mode = report.get("analysis_mode", "llm")
+        mode = report.get("analysis_mode", "rule-based")
         if mode == "rule-based":
             st.info(
-                "⚡ This report was generated using **rule-based analysis** "
-                "(Ollama was offline). Start Ollama and re-run for full AI explanations."
+                "🔵 This report used **rule-based analysis**. "
+                "Add a `GROQ_API_KEY` in Render environment variables for full AI explanations."
             )
+        elif mode == "groq":
+            st.success("🟢 This report was analyzed by **Groq AI** (llama-3.1-8b-instant).")
         tab1, tab2, tab3 = st.tabs(
             ["📊 Dashboard", "🔍 Anomalies", "📄 Report"]
         )
