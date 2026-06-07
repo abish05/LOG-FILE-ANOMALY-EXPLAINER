@@ -1,5 +1,44 @@
-from backend.reports.report_generator import *
+import os
+import csv
+import logging
+import tempfile
+from datetime import datetime
+from typing import Dict, Any
 
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.lib import colors
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+)
+
+logger = logging.getLogger(__name__)
+
+REPORT_DIR = os.getenv(
+    "REPORT_OUTPUT_DIR",
+    os.path.join(tempfile.gettempdir(), "logsage_reports")
+)
+
+def _ensure_dir() -> str:
+    os.makedirs(REPORT_DIR, exist_ok=True)
+    return REPORT_DIR
+
+_SEV_HEX = {
+    "Critical": "A32D2D",
+    "High":     "854F0B",
+    "Medium":   "185FA5",
+    "Low":      "3B6D11",
+}
+
+def _severity_color(label: str):
+    """Return a ReportLab HexColor for the given severity label."""
+    hex_val = _SEV_HEX.get(label, "000000")
+    return colors.HexColor(f"#{hex_val}")
+
+def _severity_hex(label: str) -> str:
+    """Return the raw 6-char hex string (no #) for inline font tags."""
+    return _SEV_HEX.get(label, "000000")
 
 def generate_pdf(report: Dict[str, Any],
                  output_path: str = None) -> str:

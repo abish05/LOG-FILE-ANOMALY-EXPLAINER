@@ -71,6 +71,17 @@ Contributions welcome via pull requests. Please run tests before submitting.
 License
 -------
 MIT
+ 
+Team layout
+-----------
+We introduced a team-aligned layout to make parallel work easier. See `ARCHITECTURE.md` for full details. In short:
+
+- UI/Frontend work: `frontend/` (note: Streamlit app implementation is under `backend/app.py`)
+- Backend: `backend/` (DB, parser, reports, app implementation)
+- AI engine: `ai_engine/` (agent, LLM clients, prompts)
+- Deployment/infra: `deployment/` (scripts, Docker, CI manifests)
+
+Backward compatibility: top-level shims keep `agent`, `database`, `parser`, and `reports` import paths working.
 # LogSage AI — Incident Report Generator
 
 LogSage AI is an intelligent log file analyzer designed to assist on-call engineers by automating the interpretation of production logs. It leverages local Large Language Models (Ollama) to pinpoint anomalies, identify root causes, calculate severities, and prescribe concrete remediation steps.
