@@ -1,4 +1,3 @@
-from ai_engine.agent.analyzer import *
 import json
 import logging
 import re
@@ -6,9 +5,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
-from agent.llm_client import call_llm, is_groq_available
-from agent.ollama_client import is_ollama_available
-from agent.prompt_templates import (
+from ai_engine.agent.llm_client import call_llm, is_groq_available
+from ai_engine.agent.ollama_client import is_ollama_available
+from ai_engine.agent.prompt_templates import (
     build_analysis_prompt,
     build_incident_summary_prompt,
     get_severity_label,

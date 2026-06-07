@@ -1,4 +1,3 @@
-from ai_engine.agent.ollama_client import *
 import os
 import time
 import logging
@@ -69,7 +68,7 @@ def call_ollama(prompt: str, model: str | None = None) -> str:
     if model is None:
         model = _get_model()
 
-    # ── Fast offline path ──────────────────────────────────────────────────────
+    # ── Fast offline path ─────────────────────────────────────────────────────
     if not is_ollama_available():
         logger.warning("Ollama offline — returning rule-based fallback immediately")
         return _FALLBACK_JSON

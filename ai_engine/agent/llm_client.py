@@ -1,11 +1,5 @@
-from ai_engine.agent.llm_client import *
 """
-Unified LLM client for LogSage AI.
-
-Priority order:
-  1. Groq Cloud API  (free, fast — if GROQ_API_KEY is set)
-  2. Ollama          (if running locally)
-  3. Rule-based      (always works, no AI required)
+Unified LLM client for LogSage AI (now under ai_engine.agent).
 """
 import os
 import logging
@@ -90,7 +84,7 @@ def get_ai_status() -> dict:
         }
 
     # Lazy import to avoid circular deps
-    from agent.ollama_client import is_ollama_available, _get_model
+    from ai_engine.agent.ollama_client import is_ollama_available, _get_model
     if is_ollama_available():
         return {
             "provider": "Ollama",
@@ -122,7 +116,7 @@ def call_llm(prompt: str) -> str:
         logger.warning("Groq failed — falling back to Ollama/rule-based")
 
     # 2. Local Ollama
-    from agent.ollama_client import is_ollama_available, call_ollama
+    from ai_engine.agent.ollama_client import is_ollama_available, call_ollama
     if is_ollama_available():
         return call_ollama(prompt)
 

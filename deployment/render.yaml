@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: logsage-ai
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true --browser.gatherUsageStats false
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false          # set this secret in Render dashboard
+      - key: GROQ_MODEL
+        value: llama-3.1-8b-instant
+      - key: OLLAMA_HOST
+        value: http://localhost:11434
+      - key: MODEL_NAME
+        value: llama3
+      - key: DB_PATH
+        value: /tmp/logsage.db
+      - key: REPORT_OUTPUT_DIR
+        value: /tmp/logsage_reports
+      - key: PYTHON_VERSION
+        value: 3.11.0
