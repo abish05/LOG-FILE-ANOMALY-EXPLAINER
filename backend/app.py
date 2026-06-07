@@ -26,57 +26,236 @@ from backend.reports.report_generator import generate_pdf, generate_csv
 st.set_page_config(
     page_title="LogSage AI",
     page_icon="🔍",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 # ── inject custom CSS ──────────────────────────────────────────────────────────
 st.markdown("""<style>
-/* Hide Streamlit chrome for cleaner UI */
-#MainMenu,footer,[data-testid="stToolbar"]{visibility:hidden}
-
-/* Sidebar styling */
-[data-testid="stSidebar"]{background:#F1EFE8}
-
-/* Metric tiles */
-[data-testid="metric-container"]{background:#F1EFE8;border-radius:8px;padding:14px!important}
-[data-testid="metric-container"] label{font-size:11px!important;text-transform:uppercase;letter-spacing:.06em;color:#888780!important}
-
-/* File uploader */
-[data-testid="stFileUploader"]{border:1.5px dashed rgba(0,0,0,.2)!important;border-radius:12px!important;background:#F1EFE8!important}
-
-/* Expanders */
-[data-testid="stExpander"]{border:0.5px solid rgba(0,0,0,.1)!important;border-radius:8px!important;overflow:hidden}
-[data-testid="stExpander"] summary{background:#F1EFE8!important;font-size:13px!important;font-weight:500!important}
-
-/* Primary buttons */
-.stButton>button[kind="primary"]{background:#E24B4A!important;color:#fff!important;border:none!important;border-radius:8px!important;font-weight:500!important}
-.stButton>button[kind="primary"]:hover{opacity:.88!important}
-
-/* Tabs */
-.stTabs [data-baseweb="tab"]{font-size:13px!important;font-weight:500!important}
-.stTabs [aria-selected="true"]{color:#E24B4A!important;border-bottom-color:#E24B4A!important}
-
-/* Alerts */
-div[data-testid="stAlert"]{border-radius:8px!important;font-size:13px!important}
-
-/* Responsive tweaks for small screens (mobiles & small tablets) */
-@media (max-width: 768px) {
-    .block-container{padding-left:12px !important;padding-right:12px !important}
-    .stButton>button{width:100% !important;padding:12px 16px !important;font-size:16px !important}
-    [data-testid="metric-container"]{padding:12px 10px!important}
-    .stTabs [data-baseweb="tab"]{font-size:14px!important}
-    pre, code {white-space: pre-wrap; word-break: break-word;}
-    /* Force column-like stacking for Streamlit columns when space is limited */
-    div[data-testid^="stVerticalBlock"] > div[role="group"]{flex-direction:column!important}
-    div[data-testid^="stColumns"]{display:block!important}
-    div[data-testid^="stPlotlyChart"]{width:100% !important;height:auto !important}
+/* Root/Main styling */
+html, body, [data-testid="stAppViewContainer"] {
+    background-color: #1E1E1E;
+    color: #E0E0E0;
 }
 
-/* Improve readability on very small screens */
-@media (max-width: 420px) {
-    .stMarkdown, .stText, .stMetric{font-size:14px!important}
-    .stTitle{font-size:20px!important}
+/* Sidebar styling */
+[data-testid="stSidebar"] {
+    background-color: #2D2D2D !important;
+    color: #E0E0E0;
+    border-radius: 0;
+}
+
+/* Main content area */
+.main .block-container {
+    background-color: #1E1E1E;
+    color: #E0E0E0;
+    max-width: 100%;
+}
+
+/* Headers */
+h1, h2, h3, h4, h5, h6 {
+    color: #E0E0E0 !important;
+}
+
+/* Metric cards */
+[data-testid="metric-container"] {
+    background-color: #2D2D2D !important;
+    border-radius: 8px;
+    padding: 14px !important;
+    border: 1px solid #3A3A3A !important;
+}
+[data-testid="metric-container"] label {
+    font-size: 11px !important;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #999999 !important;
+}
+[data-testid="metric-container"] .st-emotion-cache-1wmy9hl,
+[data-testid="metric-container"] .st-emotion-cache-pkbazv {
+    color: #E0E0E0 !important;
+}
+
+/* File uploader */
+[data-testid="stFileUploader"] {
+    border: 2px dashed #444444 !important;
+    border-radius: 12px !important;
+    background-color: #2D2D2D !important;
+    padding: 30px !important;
+    text-align: center;
+}
+[data-testid="stFileUploader"] label {
+    color: #999999 !important;
+}
+
+/* Expanders (for quick findings) */
+[data-testid="stExpander"] {
+    border: 0.5px solid #444444 !important;
+    border-radius: 8px !important;
+    overflow: hidden;
+    background-color: #2D2D2D;
+    margin-bottom: 10px;
+}
+[data-testid="stExpander"] summary {
+    background-color: #3A3A3A !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    color: #E0E0E0 !important;
+}
+
+/* Tabs */
+.stTabs [data-baseweb="tab"] {
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    color: #999999 !important;
+}
+.stTabs [aria-selected="true"] {
+    color: #E24B4A !important;
+    border-bottom-color: #E24B4A !important;
+}
+
+/* Buttons */
+.stButton > button {
+    background-color: #444444 !important;
+    color: #E0E0E0 !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+}
+.stButton > button:hover {
+    background-color: #555555 !important;
+    opacity: 0.9 !important;
+}
+.stButton > button[kind="primary"] {
+    background-color: #E24B4A !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+}
+.stButton > button[kind="primary"]:hover {
+    opacity: 0.88 !important;
+}
+
+/* Alerts */
+.stSuccess, .stInfo, .stWarning, .stError {
+    background-color: #2D2D2D !important;
+    color: #E0E0E0 !important;
+    border-radius: 8px !important;
+}
+.stSuccess {
+    border-left: 6px solid #639922 !important;
+}
+.stInfo {
+    border-left: 6px solid #378ADD !important;
+}
+.stWarning {
+    border-left: 6px solid #EF9F27 !important;
+}
+.stError {
+    border-left: 6px solid #E24B4A !important;
+}
+
+/* Text input fields */
+input, textarea, [data-testid="stTextInput"] input {
+    background-color: #2D2D2D !important;
+    color: #E0E0E0 !important;
+    border: 1px solid #444444 !important;
+    border-radius: 8px !important;
+}
+input::placeholder {
+    color: #666666 !important;
+}
+
+/* Dividers */
+hr, [data-testid="stDivider"] {
+    border-color: #444444 !important;
+}
+
+/* Container borders */
+[data-testid="stContainer"] {
+    border-color: #444444 !important;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #2D2D2D;
+}
+::-webkit-scrollbar-thumb {
+    background: #555555;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #666666;
+}
+
+/* Radio buttons */
+[data-testid="stRadio"] {
+    color: #E0E0E0 !important;
+}
+
+/* Selectbox */
+[data-testid="stSelectbox"] {
+    background-color: #2D2D2D !important;
+    border-radius: 8px !important;
+}
+
+/* Code blocks */
+pre {
+    background-color: #2D2D2D !important;
+    border: 1px solid #444444 !important;
+    border-radius: 8px !important;
+    color: #E0E0E0 !important;
+}
+
+/* JSON display */
+.stJsonViewer {
+    background-color: #2D2D2D !important;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .main .block-container {
+        padding: 1rem;
+    }
+    
+    [data-testid="stMetric"] {
+        border: 1px solid #3A3A3A;
+        border-radius: 8px;
+        padding: 12px;
+    }
+    
+    /* Stack columns on mobile */
+    [data-testid="stColumn"] {
+        flex-basis: 100% !important;
+        width: 100% !important;
+    }
+    
+    [data-testid="stFileUploader"] {
+        padding: 20px !important;
+    }
+}
+
+/* Very small screens */
+@media (max-width: 480px) {
+    h1 {
+        font-size: 24px !important;
+    }
+    
+    h2 {
+        font-size: 20px !important;
+    }
+    
+    .stButton > button {
+        font-size: 12px !important;
+        padding: 8px 12px !important;
+    }
+    
+    [data-testid="stMetric"] {
+        padding: 8px !important;
+    }
 }
 
 </style>""", unsafe_allow_html=True)
@@ -100,7 +279,7 @@ with st.sidebar:
     st.divider()
     page = st.radio(
         "Navigation",
-        ["🏠 Analyze Logs", "📜 Incident History", "ℹ️ About"],
+        ["Analyze logs", "Incident history", "Analytics", "Reports", "Settings"],
         label_visibility="collapsed"
     )
     st.divider()
@@ -139,7 +318,7 @@ def sev_color(score: int) -> str:
 # ═════════════════════════════════════════════════════════════════════════════=
 # PAGE: ANALYZE LOGS
 # ═════════════════════════════════════════════════════════════════════════════=
-if page == "🏠 Analyze Logs":
+if page == "Analyze logs":
     st.title("Analyze log file")
     st.caption("Upload a .log or .txt file to begin AI-powered anomaly analysis")
 
@@ -398,7 +577,7 @@ if page == "🏠 Analyze Logs":
 # ═════════════════════════════════════════════════════════════════════════════=
 # PAGE: INCIDENT HISTORY
 # ═════════════════════════════════════════════════════════════════════════════=
-elif page == "📜 Incident History":
+elif page == "Incident history":
     st.title("Incident history")
     search = st.text_input(
         "Search by filename", placeholder="e.g. database_error"
@@ -434,32 +613,12 @@ elif page == "📜 Incident History":
 # ═════════════════════════════════════════════════════════════════════════════=
 # PAGE: ABOUT
 # ═════════════════════════════════════════════════════════════════════════════=
-elif page == "ℹ️ About":
-    st.title("About LogSage AI")
-    st.markdown("""
-LogSage AI is an AI-powered log file anomaly explainer built for the
-**Infinite Computer Solutions AI Prototype Challenge**.
-
-### Tech stack
-| Component | Technology |
-|-----------|-----------|
-| Frontend | Streamlit |
-| Backend | Python 3.10+ |
-| AI Engine | Ollama + Llama3 |
-| Database | SQLite |
-| Reports | ReportLab + CSV |
-| Charts | Plotly |
-
-### Agent workflow
-The 7-step agent loop automatically:
-1. Reads and validates the uploaded log
-2. Detects anomalies using keyword matching
-3. Extracts ±20 lines of context per error
-4. Analyzes each anomaly using Llama3 via Ollama
-5. Classifies severity on a 1–10 scale
-6. Generates remediation recommendations
-7. Produces a full incident report
-
-### Team
-Built in 1–2 days using only free and open source tools.
-    """)
+elif page == "Analytics":
+    st.title("Analytics")
+    st.info("Analytics page content will go here.")
+elif page == "Reports":
+    st.title("Reports")
+    st.info("Reports page content will go here.")
+elif page == "Settings":
+    st.title("Settings")
+    st.info("Settings page content will go here.")
