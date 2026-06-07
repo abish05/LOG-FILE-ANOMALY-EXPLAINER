@@ -32,18 +32,53 @@ st.set_page_config(
 
 # ── inject custom CSS ──────────────────────────────────────────────────────────
 st.markdown("""<style>
+/* Hide Streamlit chrome for cleaner UI */
 #MainMenu,footer,[data-testid="stToolbar"]{visibility:hidden}
+
+/* Sidebar styling */
 [data-testid="stSidebar"]{background:#F1EFE8}
+
+/* Metric tiles */
 [data-testid="metric-container"]{background:#F1EFE8;border-radius:8px;padding:14px!important}
 [data-testid="metric-container"] label{font-size:11px!important;text-transform:uppercase;letter-spacing:.06em;color:#888780!important}
+
+/* File uploader */
 [data-testid="stFileUploader"]{border:1.5px dashed rgba(0,0,0,.2)!important;border-radius:12px!important;background:#F1EFE8!important}
+
+/* Expanders */
 [data-testid="stExpander"]{border:0.5px solid rgba(0,0,0,.1)!important;border-radius:8px!important;overflow:hidden}
 [data-testid="stExpander"] summary{background:#F1EFE8!important;font-size:13px!important;font-weight:500!important}
+
+/* Primary buttons */
 .stButton>button[kind="primary"]{background:#E24B4A!important;color:#fff!important;border:none!important;border-radius:8px!important;font-weight:500!important}
 .stButton>button[kind="primary"]:hover{opacity:.88!important}
+
+/* Tabs */
 .stTabs [data-baseweb="tab"]{font-size:13px!important;font-weight:500!important}
 .stTabs [aria-selected="true"]{color:#E24B4A!important;border-bottom-color:#E24B4A!important}
+
+/* Alerts */
 div[data-testid="stAlert"]{border-radius:8px!important;font-size:13px!important}
+
+/* Responsive tweaks for small screens (mobiles & small tablets) */
+@media (max-width: 768px) {
+    .block-container{padding-left:12px !important;padding-right:12px !important}
+    .stButton>button{width:100% !important;padding:12px 16px !important;font-size:16px !important}
+    [data-testid="metric-container"]{padding:12px 10px!important}
+    .stTabs [data-baseweb="tab"]{font-size:14px!important}
+    pre, code {white-space: pre-wrap; word-break: break-word;}
+    /* Force column-like stacking for Streamlit columns when space is limited */
+    div[data-testid^="stVerticalBlock"] > div[role="group"]{flex-direction:column!important}
+    div[data-testid^="stColumns"]{display:block!important}
+    div[data-testid^="stPlotlyChart"]{width:100% !important;height:auto !important}
+}
+
+/* Improve readability on very small screens */
+@media (max-width: 420px) {
+    .stMarkdown, .stText, .stMetric{font-size:14px!important}
+    .stTitle{font-size:20px!important}
+}
+
 </style>""", unsafe_allow_html=True)
 
 # ── init DB ────────────────────────────────────────────────────────────────────
@@ -122,7 +157,7 @@ if page == "🏠 Analyze Logs":
         )
 
         if st.button("🚀 Run AI Analysis", type="primary",
-                     use_container_width=False):
+                 use_container_width=True):
             progress = st.progress(0, text="Starting analysis...")
 
             # Show offline warning before starting
