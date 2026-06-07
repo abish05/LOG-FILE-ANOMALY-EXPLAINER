@@ -471,8 +471,7 @@ if page == "🔬 Analyze logs":
                         yaxis=dict(
                             tickfont=dict(color="#a0aec0"),
                             gridcolor="rgba(255,255,255,0.05)",
-                            title="Count",
-                            titlefont=dict(color="#718096"),
+                            title=dict(text="Count", font=dict(color="#718096")),
                         ),
                     )
                     st.plotly_chart(fig2, use_container_width=True)
