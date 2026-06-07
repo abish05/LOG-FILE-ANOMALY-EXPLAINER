@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import pytest
 import json
 from unittest.mock import patch
-from agent.analyzer import run_agent_loop
+from ai_engine.agent.analyzer import run_agent_loop
 
 @pytest.fixture
 def sample_parsed_data():
@@ -34,9 +34,9 @@ def sample_parsed_data():
     }
 
 # Patch call_llm + is_groq_available + is_ollama_available so tests always use LLM mode
-@patch("agent.analyzer.is_ollama_available", return_value=False)
-@patch("agent.analyzer.is_groq_available", return_value=True)
-@patch("agent.analyzer.call_llm")
+@patch("ai_engine.agent.analyzer.is_ollama_available", return_value=False)
+@patch("ai_engine.agent.analyzer.is_groq_available", return_value=True)
+@patch("ai_engine.agent.analyzer.call_llm")
 def test_run_agent_loop_returns_required_keys(mock_llm, mock_groq, mock_ollama, sample_parsed_data):
     mock_llm.side_effect = [
         json.dumps({"root_cause": "c1", "category": "Database Error", "severity_score": 8, "severity_label": "High", "remediation_steps": ["1"], "summary": "s1"}),
@@ -58,9 +58,9 @@ def test_run_agent_loop_returns_required_keys(mock_llm, mock_groq, mock_ollama, 
     assert "executive_summary" in report
     assert "agent_steps_completed" in report
 
-@patch("agent.analyzer.is_ollama_available", return_value=False)
-@patch("agent.analyzer.is_groq_available", return_value=True)
-@patch("agent.analyzer.call_llm")
+@patch("ai_engine.agent.analyzer.is_ollama_available", return_value=False)
+@patch("ai_engine.agent.analyzer.is_groq_available", return_value=True)
+@patch("ai_engine.agent.analyzer.call_llm")
 def test_severity_distribution_calculation(mock_llm, mock_groq, mock_ollama, sample_parsed_data):
     mock_llm.side_effect = [
         json.dumps({"severity_score": 9}),   # Critical
@@ -78,9 +78,9 @@ def test_severity_distribution_calculation(mock_llm, mock_groq, mock_ollama, sam
     assert report["max_severity"] == 9
     assert report["avg_severity"] == 7.0
 
-@patch("agent.analyzer.is_ollama_available", return_value=False)
-@patch("agent.analyzer.is_groq_available", return_value=True)
-@patch("agent.analyzer.call_llm")
+@patch("ai_engine.agent.analyzer.is_ollama_available", return_value=False)
+@patch("ai_engine.agent.analyzer.is_groq_available", return_value=True)
+@patch("ai_engine.agent.analyzer.call_llm")
 def test_fallback_on_invalid_json_from_llm(mock_llm, mock_groq, mock_ollama, sample_parsed_data):
     """When LLM returns unparseable text, rule-based fallback is used for that anomaly."""
     mock_llm.side_effect = [
@@ -97,8 +97,8 @@ def test_fallback_on_invalid_json_from_llm(mock_llm, mock_groq, mock_ollama, sam
     assert 1 <= anomaly1["severity_score"] <= 10
     assert len(anomaly1["remediation_steps"]) >= 1
 
-@patch("agent.analyzer.is_groq_available", return_value=False)
-@patch("agent.analyzer.is_ollama_available", return_value=False)
+@patch("ai_engine.agent.analyzer.is_groq_available", return_value=False)
+@patch("ai_engine.agent.analyzer.is_ollama_available", return_value=False)
 def test_offline_mode_uses_rule_based_analysis(mock_ollama, mock_groq, sample_parsed_data):
     """When no LLM is available, analysis completes with rule-based results."""
     report = run_agent_loop(sample_parsed_data, "test.log")
